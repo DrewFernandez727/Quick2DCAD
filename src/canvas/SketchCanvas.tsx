@@ -10,6 +10,7 @@ import { ArcTool } from '../tools/ArcTool';
 import { RectTool } from '../tools/RectTool';
 import { PolygonTool } from '../tools/PolygonTool';
 import { PointTool } from '../tools/PointTool';
+import { TrimTool } from '../tools/TrimTool';
 import { Tool } from '../tools/types';
 import type { Vec2, SnapResult } from '../geometry/types';
 
@@ -22,7 +23,18 @@ const tools: Record<string, Tool> = {
   rect: new RectTool(),
   polygon: new PolygonTool(),
   point: new PointTool(),
+  trim: new TrimTool(),
 };
+
+// ─── Ortho lock helper ────────────────────────────────────────────────────────
+function applyOrthoLock(raw: Vec2, anchor: Vec2): Vec2 {
+  const dx = raw.x - anchor.x, dy = raw.y - anchor.y;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  if (d < 1e-10) return raw;
+  const angle = Math.atan2(dy, dx);
+  const snapped = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4); // nearest 45°
+  return { x: anchor.x + d * Math.cos(snapped), y: anchor.y + d * Math.sin(snapped) };
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export function SketchCanvas() {
@@ -32,6 +44,7 @@ export function SketchCanvas() {
   const isPanning = useRef(false);
   const lastPanPos = useRef<{ x: number; y: number } | null>(null);
   const isSpaceDown = useRef(false);
+  const isShiftDown = useRef(false);
 
   const store = useSketchStore();
 
@@ -51,10 +64,19 @@ export function SketchCanvas() {
     const activeTool = tools[store.activeTool];
     const overlay = activeTool?.getOverlay() ?? {};
 
-    // Merge preview entities into a temporary entity map for the renderer
     const previewEntities = overlay.previewEntities ?? [];
     const previewEntityMap: Record<string, any> = {};
     for (const e of previewEntities) previewEntityMap[e.id] = e;
+
+    // Build orthoLock visual from shift state + tool anchor + current cursor
+    let orthoLock: RenderState['orthoLock'] = null;
+    if (isShiftDown.current) {
+      const anchor = activeTool?.getAnchor?.() ?? null;
+      if (anchor && store.cursorPos) {
+        const locked = applyOrthoLock(store.cursorPos, anchor);
+        orthoLock = { anchor, lockedPoint: locked };
+      }
+    }
 
     const state: RenderState = {
       entities: { ...store.entities, ...previewEntityMap },
@@ -68,6 +90,8 @@ export function SketchCanvas() {
       previewPoints: overlay.previewPoints,
       previewEntities: overlay.previewEntities ?? [],
       selectionBox: overlay.selectionBox ?? null,
+      liveLabel: (overlay as any).liveLabel ?? null,
+      orthoLock,
     };
 
     cancelAnimationFrame(rafRef.current);
@@ -91,13 +115,22 @@ export function SketchCanvas() {
   }, []);
 
   // ─── Screen → world + snap helper ─────────────────────────────────────────
-  const toWorldSnap = useCallback((screenX: number, screenY: number): { world: Vec2; snap: SnapResult } => {
+  const toWorldSnap = useCallback((screenX: number, screenY: number, shiftLock = false): { world: Vec2; snap: SnapResult | null } => {
     const canvas = canvasRef.current!;
     const w = canvas.width, h = canvas.height;
     const vp = useSketchStore.getState().viewport;
-    const world = screenToWorld({ x: screenX, y: screenY }, vp, w, h);
-    const { entities, snapOptions, gridSize } = useSketchStore.getState();
-    const snap = computeSnap(world, entities, vp.zoom, gridSize, snapOptions);
+    let world = screenToWorld({ x: screenX, y: screenY }, vp, w, h);
+    const { entities, snapOptions, gridSize, showGrid, activeTool } = useSketchStore.getState();
+
+    // Apply ortho lock before snapping if shift is held
+    if (shiftLock) {
+      const anchor = tools[activeTool]?.getAnchor?.() ?? null;
+      if (anchor) world = applyOrthoLock(world, anchor);
+    }
+
+    // Grid snap only fires when the grid is visible
+    const effectiveSnap = { ...snapOptions, grid: snapOptions.grid && showGrid };
+    const snap = computeSnap(world, entities, vp.zoom, gridSize, effectiveSnap);
     return { world, snap };
   }, []);
 
@@ -107,7 +140,6 @@ export function SketchCanvas() {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
-    // Pan with middle mouse or space+drag
     if (isPanning.current && lastPanPos.current) {
       const dx = sx - lastPanPos.current.x;
       const dy = sy - lastPanPos.current.y;
@@ -116,12 +148,18 @@ export function SketchCanvas() {
       return;
     }
 
-    const { world, snap } = toWorldSnap(sx, sy);
+    const { world, snap } = toWorldSnap(sx, sy, isShiftDown.current);
+
+    // Update ortho active state
+    const { activeTool } = useSketchStore.getState();
+    const hasAnchor = tools[activeTool]?.getAnchor?.() != null;
+    useSketchStore.getState().setOrthoActive(isShiftDown.current && hasAnchor);
+
     useSketchStore.getState().setSnapResult(snap);
     useSketchStore.getState().setCursorPos(world);
 
-    const activeTool = tools[useSketchStore.getState().activeTool];
-    activeTool?.onMouseMove(world, e.nativeEvent, snap);
+    const tool = tools[activeTool];
+    tool?.onMouseMove(world, e.nativeEvent, snap);
   }, [toWorldSnap]);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
@@ -129,7 +167,6 @@ export function SketchCanvas() {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
-    // Middle mouse or space = pan
     if (e.button === 1 || isSpaceDown.current) {
       isPanning.current = true;
       lastPanPos.current = { x: sx, y: sy };
@@ -137,7 +174,7 @@ export function SketchCanvas() {
     }
     if (e.button !== 0) return;
 
-    const { world, snap } = toWorldSnap(sx, sy);
+    const { world, snap } = toWorldSnap(sx, sy, isShiftDown.current);
     const activeTool = tools[useSketchStore.getState().activeTool];
     activeTool?.onMouseDown(world, e.nativeEvent, snap);
   }, [toWorldSnap]);
@@ -149,7 +186,7 @@ export function SketchCanvas() {
       return;
     }
     const rect = canvasRef.current!.getBoundingClientRect();
-    const { world, snap } = toWorldSnap(e.clientX - rect.left, e.clientY - rect.top);
+    const { world, snap } = toWorldSnap(e.clientX - rect.left, e.clientY - rect.top, isShiftDown.current);
     const activeTool = tools[useSketchStore.getState().activeTool];
     activeTool?.onMouseUp(world, e.nativeEvent, snap);
   }, [toWorldSnap]);
@@ -170,7 +207,6 @@ export function SketchCanvas() {
 
   const onContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    // Cancel current tool operation on right-click
     const activeTool = tools[useSketchStore.getState().activeTool];
     activeTool?.cancel();
   }, []);
@@ -182,12 +218,31 @@ export function SketchCanvas() {
       if (tag === 'input' || tag === 'textarea') return;
 
       if (e.key === ' ') { isSpaceDown.current = true; e.preventDefault(); return; }
+      if (e.key === 'Shift') { isShiftDown.current = true; return; }
 
       // Global shortcuts
       const store = useSketchStore.getState();
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); store.undo(); return; }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); store.redo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') { e.preventDefault(); store.selectIds(Object.keys(store.entities)); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
+        e.preventDefault();
+        useSketchStore.setState(s => ({ showGrid: !s.showGrid }));
+        return;
+      }
+
+      // Fit to view (F key)
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const { entities, selectedIds } = store;
+          const ids = selectedIds.size > 0 ? Array.from(selectedIds) : Object.keys(entities);
+          store.fitView(ids, canvas.width, canvas.height);
+        }
+        return;
+      }
+
       if (e.key === 'Escape') {
         const t = tools[store.activeTool];
         t?.cancel();
@@ -197,7 +252,8 @@ export function SketchCanvas() {
 
       // Tool shortcuts
       const toolKeys: Record<string, string> = {
-        's': 'select', 'l': 'line', 'c': 'circle', 'a': 'arc', 'r': 'rect', 'p': 'point', 'g': 'polygon',
+        's': 'select', 'l': 'line', 'c': 'circle', 'a': 'arc',
+        'r': 'rect', 'p': 'point', 'g': 'polygon', 't': 'trim',
       };
       if (!e.ctrlKey && !e.metaKey && !e.altKey && toolKeys[e.key.toLowerCase()]) {
         const prev = tools[store.activeTool];
@@ -219,6 +275,10 @@ export function SketchCanvas() {
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === ' ') { isSpaceDown.current = false; isPanning.current = false; }
+      if (e.key === 'Shift') {
+        isShiftDown.current = false;
+        useSketchStore.getState().setOrthoActive(false);
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);

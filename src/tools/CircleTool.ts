@@ -3,6 +3,7 @@ import { Vec2, EntityId, SnapResult, Entity } from '../geometry/types';
 import { RenderState } from '../canvas/renderer';
 import { useSketchStore } from '../state/sketchStore';
 import { dist } from '../geometry/mathUtils';
+import { autoConstrainPoint } from './autoConstraint';
 
 export class CircleTool implements Tool {
   name = 'circle';
@@ -11,7 +12,7 @@ export class CircleTool implements Tool {
   private centerPt: Vec2 | null = null;
   private currentPt: Vec2 | null = null;
 
-  onMouseDown(p: Vec2, _e: MouseEvent, snap: SnapResult | null): void {
+  onMouseDown(p: Vec2, e: MouseEvent, snap: SnapResult | null): void {
     const pt = snap ? snap.point : p;
     const store = useSketchStore.getState();
 
@@ -19,6 +20,7 @@ export class CircleTool implements Tool {
       store.pushHistory();
       this.centerId = store.addPoint(pt.x, pt.y);
       this.centerPt = pt;
+      autoConstrainPoint(this.centerId, snap, e.altKey, store.entities, store.addConstraint);
     } else {
       // Place circle
       const radius = dist(this.centerPt!, pt);
@@ -54,6 +56,8 @@ export class CircleTool implements Tool {
 
   getCursor(): string { return 'crosshair'; }
 
+  getAnchor(): Vec2 | null { return this.centerPt; }
+
   getOverlay(): Partial<RenderState> {
     if (!this.centerPt || !this.currentPt || !this.centerId) return {};
     const radius = dist(this.centerPt, this.currentPt);
@@ -63,6 +67,7 @@ export class CircleTool implements Tool {
     return {
       previewEntities: [previewCircle],
       previewPoints: [this.centerPt],
+      liveLabel: { worldPos: this.currentPt, text: `R ${radius.toFixed(2)}mm  ⌀${(radius * 2).toFixed(2)}mm` },
     };
   }
 }

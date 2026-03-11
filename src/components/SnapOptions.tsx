@@ -11,9 +11,14 @@ const SNAP_LABELS: { key: keyof SnapOptions; label: string; icon: string }[] = [
   { key: 'nearest',      label: 'Nearest',      icon: '○' },
 ];
 
+const GRID_SIZES = [1, 5, 10, 25, 50];
+
 export function SnapOptionsPanel() {
   const snapOptions = useSketchStore(s => s.snapOptions);
   const setSnapOptions = useSketchStore(s => s.setSnapOptions);
+  const gridSize = useSketchStore(s => s.gridSize);
+  const setGridSize = useSketchStore(s => s.setGridSize);
+  const showGrid = useSketchStore(s => s.showGrid);
 
   return (
     <div style={styles.container}>
@@ -30,6 +35,23 @@ export function SnapOptionsPanel() {
           <span style={styles.label}>{label}</span>
         </label>
       ))}
+      {/* Grid size presets */}
+      <div style={styles.gridRow}>
+        <span style={styles.gridLabel}>Grid (mm)</span>
+        <div style={styles.gridBtns}>
+          {GRID_SIZES.map(s => (
+            <button
+              key={s}
+              onClick={() => setGridSize(s)}
+              style={{
+                ...styles.gridBtn,
+                ...(gridSize === s && showGrid ? styles.gridBtnActive : {}),
+              }}
+              title={`${s}mm grid`}
+            >{s}</button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -59,4 +81,27 @@ const styles: Record<string, React.CSSProperties> = {
   check: { cursor: 'pointer', flexShrink: 0 },
   icon: { fontSize: '11px', width: '14px', textAlign: 'center', flexShrink: 0 },
   label: {},
+  gridRow: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    padding: '4px 10px 6px',
+    gap: '4px',
+  },
+  gridLabel: { fontSize: '9px', color: '#666', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
+  gridBtns: { display: 'flex', gap: '3px' },
+  gridBtn: {
+    flex: 1,
+    padding: '2px 0',
+    background: '#1e1e1e',
+    border: '1px solid #444',
+    borderRadius: '3px',
+    color: '#888',
+    fontSize: '9px',
+    cursor: 'pointer',
+  },
+  gridBtnActive: {
+    background: '#0e639c',
+    color: '#fff',
+    borderColor: '#0e639c',
+  },
 };

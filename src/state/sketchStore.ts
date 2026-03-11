@@ -60,6 +60,8 @@ export interface SketchStore {
 
   // Tool
   setActiveTool(tool: ToolName): void;
+  arcMode: 0 | 1 | 2;
+  setArcMode(m: 0 | 1 | 2): void;
 
   // Selection
   selectIds(ids: EntityId[]): void;
@@ -69,7 +71,13 @@ export interface SketchStore {
   // Snap
   setSnapResult(r: SnapResult | null): void;
   setSnapOptions(o: Partial<SnapOptions>): void;
+  setGridSize(n: number): void;
   setCursorPos(p: Vec2): void;
+
+  // Viewport extras
+  orthoActive: boolean;
+  setOrthoActive(v: boolean): void;
+  fitView(entityIds: EntityId[], canvasW: number, canvasH: number): void;
 
   // Entity mutations
   addPoint(x: number, y: number, construction?: boolean): EntityId;
@@ -83,6 +91,8 @@ export interface SketchStore {
   toggleConstruction(id: EntityId): void;
   updateRadius(id: EntityId, radius: number): void;
   updateArcAngles(id: EntityId, startAngle: number, endAngle: number): void;
+  splitLineAtParams(lineId: EntityId, t0: number, t1: number): void;
+  convertCircleToArc(circleId: EntityId, startAngle: number, endAngle: number): EntityId;
 
   // Constraints
   addConstraint(c: Omit<SketchConstraint, 'id'>): ConstraintId;
@@ -125,6 +135,7 @@ export const useSketchStore = create<SketchStore>()(
     constraints: {},
     viewport: { panX: 0, panY: 0, zoom: 50 }, // 50px per unit (1 unit = 1mm)
     activeTool: 'select',
+    arcMode: 0,
     selectedIds: new Set<EntityId>(),
     snapOptions: { ...DEFAULT_SNAP_OPTIONS },
     snapResult: null,
@@ -163,6 +174,7 @@ export const useSketchStore = create<SketchStore>()(
       s.activeTool = tool;
       s.selectedIds = new Set();
     }),
+    setArcMode: (m) => set(s => { s.arcMode = m; }),
 
     // ── Selection ─────────────────────────────────────────────────────────────
     selectIds: (ids) => set(s => { s.selectedIds = new Set(ids); }),
@@ -175,7 +187,47 @@ export const useSketchStore = create<SketchStore>()(
     // ── Snap ──────────────────────────────────────────────────────────────────
     setSnapResult: (r) => set(s => { s.snapResult = r; }),
     setSnapOptions: (o) => set(s => { Object.assign(s.snapOptions, o); }),
+    setGridSize: (n) => set(s => { s.gridSize = n; }),
     setCursorPos: (p) => set(s => { s.cursorPos = p; }),
+
+    // ── Viewport extras ───────────────────────────────────────────────────────
+    orthoActive: false,
+    setOrthoActive: (v) => set(s => { s.orthoActive = v; }),
+    fitView: (entityIds, canvasW, canvasH) => set(s => {
+      if (entityIds.length === 0) return;
+      const pts: Vec2[] = [];
+      for (const id of entityIds) {
+        const e = s.entities[id];
+        if (!e) continue;
+        if (e.type === 'point') pts.push({ x: (e as PointEntity).x, y: (e as PointEntity).y });
+        else if (e.type === 'line') {
+          const p1 = s.entities[(e as LineEntity).p1Id] as PointEntity | undefined;
+          const p2 = s.entities[(e as LineEntity).p2Id] as PointEntity | undefined;
+          if (p1) pts.push({ x: p1.x, y: p1.y });
+          if (p2) pts.push({ x: p2.x, y: p2.y });
+        } else if (e.type === 'circle' || e.type === 'arc') {
+          const c = s.entities[(e as CircleEntity).centerId] as PointEntity | undefined;
+          const r = (e as CircleEntity).radius;
+          if (c) {
+            pts.push({ x: c.x - r, y: c.y - r });
+            pts.push({ x: c.x + r, y: c.y + r });
+          }
+        }
+      }
+      if (pts.length === 0) return;
+      const minX = Math.min(...pts.map(p => p.x));
+      const maxX = Math.max(...pts.map(p => p.x));
+      const minY = Math.min(...pts.map(p => p.y));
+      const maxY = Math.max(...pts.map(p => p.y));
+      const bW = maxX - minX || 20;
+      const bH = maxY - minY || 20;
+      const zoom = Math.min(canvasW / (bW * 1.4), canvasH / (bH * 1.4), 2000);
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      s.viewport.zoom = Math.max(5, zoom);
+      s.viewport.panX = -cx * zoom;
+      s.viewport.panY = cy * zoom;
+    }),
 
     // ── Entity mutations ──────────────────────────────────────────────────────
     addPoint: (x, y, construction = false) => {
@@ -221,6 +273,76 @@ export const useSketchStore = create<SketchStore>()(
       const l3 = addLine(p3, p4, construction);
       const l4 = addLine(p4, p1, construction);
       return [p1, p2, p3, p4, l1, l2, l3, l4];
+    },
+
+    splitLineAtParams: (lineId, t0, t1) => {
+      const { entities } = get();
+      const line = entities[lineId] as LineEntity | undefined;
+      if (!line || line.type !== 'line') return;
+      const p1e = entities[line.p1Id] as PointEntity | undefined;
+      const p2e = entities[line.p2Id] as PointEntity | undefined;
+      if (!p1e || !p2e) return;
+
+      const { addPoint, addLine } = get();
+      const EPSILON = 0.001;
+
+      // Points that will anchor the two surviving segments
+      const startId = line.p1Id;
+      const endId = line.p2Id;
+
+      // Intermediate point at t0 (if not at the very start)
+      let midStartId: EntityId | null = null;
+      if (t0 > EPSILON) {
+        midStartId = addPoint(
+          p1e.x + t0 * (p2e.x - p1e.x),
+          p1e.y + t0 * (p2e.y - p1e.y),
+          line.construction
+        );
+      }
+
+      // Intermediate point at t1 (if not at the very end)
+      let midEndId: EntityId | null = null;
+      if (t1 < 1 - EPSILON) {
+        midEndId = addPoint(
+          p1e.x + t1 * (p2e.x - p1e.x),
+          p1e.y + t1 * (p2e.y - p1e.y),
+          line.construction
+        );
+      }
+
+      // Remove original line entity (but NOT its endpoints)
+      set(s => {
+        delete s.entities[lineId];
+        // Remove constraints referencing this line
+        for (const [cid, c] of Object.entries(s.constraints)) {
+          if (c.entityIds.includes(lineId)) delete s.constraints[cid];
+        }
+      });
+
+      // Add surviving segments
+      if (midStartId && t0 > EPSILON) {
+        addLine(startId, midStartId, line.construction);
+      }
+      if (midEndId && t1 < 1 - EPSILON) {
+        addLine(midEndId, endId, line.construction);
+      }
+    },
+
+    convertCircleToArc: (circleId, startAngle, endAngle) => {
+      const { entities } = get();
+      const circ = entities[circleId] as CircleEntity | undefined;
+      if (!circ || circ.type !== 'circle') return '';
+      const { centerId, radius, construction } = circ;
+
+      // Remove only the circle entity (keep center point)
+      set(s => {
+        delete s.entities[circleId];
+        for (const [cid, c] of Object.entries(s.constraints)) {
+          if (c.entityIds.includes(circleId)) delete s.constraints[cid];
+        }
+      });
+
+      return get().addArc(centerId, radius, startAngle, endAngle, construction);
     },
 
     movePoint: (id, x, y) => set(s => {

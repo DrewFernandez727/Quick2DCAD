@@ -9,13 +9,20 @@ interface ToolDef {
 }
 
 const TOOLS: ToolDef[] = [
-  { name: 'select',  label: 'Select',   icon: '↖',  shortcut: 'S' },
-  { name: 'line',    label: 'Line',     icon: '╱',  shortcut: 'L' },
-  { name: 'circle',  label: 'Circle',   icon: '○',  shortcut: 'C' },
-  { name: 'arc',     label: 'Arc',      icon: '◠',  shortcut: 'A' },
-  { name: 'rect',    label: 'Rectangle',icon: '□',  shortcut: 'R' },
-  { name: 'polygon', label: 'Polygon',  icon: '⬡',  shortcut: 'G' },
-  { name: 'point',   label: 'Point',    icon: '·',  shortcut: 'P' },
+  { name: 'select',  label: 'Select',    icon: '↖', shortcut: 'S' },
+  { name: 'line',    label: 'Line',      icon: '╱', shortcut: 'L' },
+  { name: 'circle',  label: 'Circle',    icon: '○', shortcut: 'C' },
+  { name: 'arc',     label: 'Arc',       icon: '◠', shortcut: 'A' },
+  { name: 'rect',    label: 'Rectangle', icon: '□', shortcut: 'R' },
+  { name: 'polygon', label: 'Polygon',   icon: '⬡', shortcut: 'G' },
+  { name: 'point',   label: 'Point',     icon: '·', shortcut: 'P' },
+  { name: 'trim',    label: 'Trim',      icon: '✂', shortcut: 'T' },
+];
+
+const ARC_MODES: { label: string; title: string }[] = [
+  { label: 'C-R-E', title: 'Center → Radius → End angle' },
+  { label: '3-Pt',  title: 'Start → Midpoint on arc → End (Tab)' },
+  { label: 'S-C-E', title: 'Start → Center → End (Tab)' },
 ];
 
 export function Toolbar() {
@@ -23,11 +30,21 @@ export function Toolbar() {
   const setActiveTool = useSketchStore(s => s.setActiveTool);
   const undo = useSketchStore(s => s.undo);
   const redo = useSketchStore(s => s.redo);
-  const resetView = useSketchStore(s => s.resetView);
-  const clearSketch = useSketchStore(s => s.clearSketch);
+  const showGrid = useSketchStore(s => s.showGrid);
+  const arcMode = useSketchStore(s => s.arcMode);
+  const setArcMode = useSketchStore(s => s.setArcMode);
   const exportSketch = useSketchStore(s => s.exportSketch);
   const importSketch = useSketchStore(s => s.importSketch);
-  const showGrid = useSketchStore(s => s.showGrid);
+  const clearSketch = useSketchStore(s => s.clearSketch);
+  const fitView = useSketchStore(s => s.fitView);
+
+  const doFitView = () => {
+    const canvas = document.querySelector('canvas') as HTMLCanvasElement | null;
+    if (!canvas) return;
+    const { entities, selectedIds } = useSketchStore.getState();
+    const ids = selectedIds.size > 0 ? Array.from(selectedIds) : Object.keys(entities);
+    fitView(ids, canvas.width, canvas.height);
+  };
 
   const handleExport = () => {
     const json = exportSketch();
@@ -51,32 +68,38 @@ export function Toolbar() {
     input.click();
   };
 
-  const handleExportSVG = () => {
-    // Trigger SVG export via global function set in App
-    (window as any).__exportSVG?.();
-  };
-
   return (
     <div style={styles.container}>
-      {/* Drawing tools */}
       <div style={styles.section}>
         {TOOLS.map(t => (
-          <button
-            key={t.name}
-            onClick={() => setActiveTool(t.name)}
-            style={{ ...styles.btn, ...(activeTool === t.name ? styles.btnActive : {}) }}
-            title={`${t.label} (${t.shortcut})`}
-          >
-            <span style={styles.icon}>{t.icon}</span>
-            <span style={styles.label}>{t.label}</span>
-            <span style={styles.shortcut}>{t.shortcut}</span>
-          </button>
+          <div key={t.name}>
+            <button
+              onClick={() => setActiveTool(t.name)}
+              style={{ ...styles.btn, ...(activeTool === t.name ? styles.btnActive : {}) }}
+              title={`${t.label} (${t.shortcut})`}
+            >
+              <span style={styles.icon}>{t.icon}</span>
+              <span style={styles.label}>{t.label}</span>
+              <span style={styles.shortcut}>{t.shortcut}</span>
+            </button>
+            {t.name === 'arc' && activeTool === 'arc' && (
+              <div style={styles.subBtns}>
+                {ARC_MODES.map((m, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setArcMode(i as 0 | 1 | 2)}
+                    style={{ ...styles.subBtn, ...(arcMode === i ? styles.subBtnActive : {}) }}
+                    title={m.title}
+                  >{m.label}</button>
+                ))}
+              </div>
+            )}
+          </div>
         ))}
       </div>
 
       <div style={styles.divider} />
 
-      {/* Edit actions */}
       <div style={styles.section}>
         <button onClick={undo} style={styles.btn} title="Undo (Ctrl+Z)">
           <span style={styles.icon}>↩</span><span style={styles.label}>Undo</span>
@@ -88,15 +111,16 @@ export function Toolbar() {
 
       <div style={styles.divider} />
 
-      {/* View */}
       <div style={styles.section}>
-        <button onClick={resetView} style={styles.btn} title="Reset View">
-          <span style={styles.icon}>⊙</span><span style={styles.label}>Fit</span>
+        <button onClick={doFitView} style={styles.btn} title="Fit view to geometry (F)">
+          <span style={styles.icon}>⊙</span>
+          <span style={styles.label}>Fit</span>
+          <span style={styles.shortcut}>F</span>
         </button>
         <button
           onClick={() => useSketchStore.setState(s => ({ showGrid: !s.showGrid }))}
           style={{ ...styles.btn, ...(showGrid ? styles.btnActive : {}) }}
-          title="Toggle Grid"
+          title="Toggle Grid (Ctrl+G)"
         >
           <span style={styles.icon}>#</span><span style={styles.label}>Grid</span>
         </button>
@@ -104,7 +128,6 @@ export function Toolbar() {
 
       <div style={styles.divider} />
 
-      {/* File */}
       <div style={styles.section}>
         <button onClick={handleImport} style={styles.btn} title="Import JSON">
           <span style={styles.icon}>📂</span><span style={styles.label}>Open</span>
@@ -112,7 +135,7 @@ export function Toolbar() {
         <button onClick={handleExport} style={styles.btn} title="Export JSON">
           <span style={styles.icon}>💾</span><span style={styles.label}>Save</span>
         </button>
-        <button onClick={handleExportSVG} style={styles.btn} title="Export SVG">
+        <button onClick={() => (window as any).__exportSVG?.()} style={styles.btn} title="Export SVG">
           <span style={styles.icon}>📤</span><span style={styles.label}>SVG</span>
         </button>
         <button
@@ -129,59 +152,28 @@ export function Toolbar() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    display: 'flex',
-    flexDirection: 'column',
-    width: '68px',
-    background: '#252526',
-    borderRight: '1px solid #3a3a3a',
-    padding: '4px 0',
-    overflowY: 'auto',
-    flexShrink: 0,
+    display: 'flex', flexDirection: 'column', width: '72px',
+    background: '#252526', borderRight: '1px solid #3a3a3a',
+    padding: '4px 0', overflowY: 'auto', flexShrink: 0,
   },
-  section: {
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '2px 4px',
-    gap: '2px',
-  },
-  divider: {
-    height: '1px',
-    background: '#3a3a3a',
-    margin: '4px 8px',
-  },
+  section: { display: 'flex', flexDirection: 'column', padding: '2px 4px', gap: '2px' },
+  divider: { height: '1px', background: '#3a3a3a', margin: '4px 8px' },
   btn: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: '6px 2px',
-    borderRadius: '4px',
-    background: 'transparent',
-    color: '#ccc',
-    fontSize: '11px',
-    gap: '2px',
-    transition: 'background 0.1s',
-    cursor: 'pointer',
-    border: 'none',
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    padding: '5px 2px', borderRadius: '4px', background: 'transparent',
+    color: '#ccc', fontSize: '11px', gap: '2px', cursor: 'pointer', border: 'none',
   },
-  btnActive: {
-    background: '#0e639c',
-    color: '#fff',
+  btnActive: { background: '#0e639c', color: '#fff' },
+  icon: { fontSize: '16px', lineHeight: 1 },
+  label: { fontSize: '9px', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', maxWidth: '64px', textOverflow: 'ellipsis' },
+  shortcut: { fontSize: '8px', opacity: 0.5, fontFamily: 'monospace' },
+  subBtns: {
+    display: 'flex', flexDirection: 'column', gap: '2px',
+    padding: '2px 0 2px 6px', borderLeft: '2px solid #0e639c', marginLeft: '10px',
   },
-  icon: {
-    fontSize: '18px',
-    lineHeight: 1,
+  subBtn: {
+    padding: '2px 4px', borderRadius: '3px', background: '#1e1e1e',
+    border: '1px solid #444', color: '#aaa', fontSize: '9px', cursor: 'pointer', textAlign: 'left' as const,
   },
-  label: {
-    fontSize: '9px',
-    opacity: 0.8,
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    maxWidth: '60px',
-    textOverflow: 'ellipsis',
-  },
-  shortcut: {
-    fontSize: '8px',
-    opacity: 0.5,
-    fontFamily: 'monospace',
-  },
+  subBtnActive: { background: '#0e639c', color: '#fff', borderColor: '#0e639c' },
 };

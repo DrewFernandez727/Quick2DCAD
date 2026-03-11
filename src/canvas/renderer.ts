@@ -68,6 +68,9 @@ export interface RenderState {
   previewPoints?: Vec2[];
   previewEntities?: Entity[];
   selectionBox?: { x1: number; y1: number; x2: number; y2: number } | null;
+  // QoL overlays
+  liveLabel?: { worldPos: Vec2; text: string } | null;
+  orthoLock?: { anchor: Vec2; lockedPoint: Vec2 } | null;
 }
 
 export function render(ctx: CanvasRenderingContext2D, state: RenderState) {
@@ -86,7 +89,9 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState) {
   if (state.previewEntities) drawPreviewEntities(ctx, state.previewEntities, entities, vp, w, h);
   if (state.previewPoints) drawPreviewPoints(ctx, state.previewPoints, vp, w, h);
   if (state.selectionBox) drawSelectionBox(ctx, state.selectionBox, vp, w, h);
+  if (state.orthoLock) drawOrthoLine(ctx, state.orthoLock, vp, w, h);
   if (state.snapResult) drawSnapIndicator(ctx, state.snapResult, vp, w, h);
+  if (state.liveLabel) drawLiveLabel(ctx, state.liveLabel, vp, w, h);
 }
 
 // ─── Grid ─────────────────────────────────────────────────────────────────────
@@ -678,4 +683,51 @@ function drawArrowhead(ctx: CanvasRenderingContext2D, from: Vec2, to: Vec2) {
   ctx.lineTo(from.x + ux * size + uy * size * 0.4, from.y + uy * size - ux * size * 0.4);
   ctx.closePath();
   ctx.fill();
+}
+
+// ─── Live label (dimension display while drawing) ─────────────────────────────
+function drawLiveLabel(
+  ctx: CanvasRenderingContext2D,
+  label: { worldPos: Vec2; text: string },
+  vp: Viewport, w: number, h: number
+) {
+  const sp = worldToScreen(label.worldPos, vp, w, h);
+  const text = label.text;
+  ctx.save();
+  ctx.font = 'bold 11px monospace';
+  const tw = ctx.measureText(text).width;
+  const pad = 5, rx = 3;
+  const bx = sp.x + 14, by = sp.y - 30, bw = tw + pad * 2, bh = 18;
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, rx);
+  ctx.fill();
+  ctx.fillStyle = C.dim;
+  ctx.fillText(text, bx + pad, by + bh - 5);
+  ctx.restore();
+}
+
+// ─── Ortho lock axis line ─────────────────────────────────────────────────────
+function drawOrthoLine(
+  ctx: CanvasRenderingContext2D,
+  ortho: { anchor: Vec2; lockedPoint: Vec2 },
+  vp: Viewport, w: number, h: number
+) {
+  const a = worldToScreen(ortho.anchor, vp, w, h);
+  const b = worldToScreen(ortho.lockedPoint, vp, w, h);
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 0.1) return;
+  const ux = dx / len, uy = dy / len;
+  // Extend line to canvas edges
+  const tFwd = Math.max(w, h) * 2;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 200, 0, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([8, 6]);
+  ctx.beginPath();
+  ctx.moveTo(a.x - ux * tFwd, a.y - uy * tFwd);
+  ctx.lineTo(a.x + ux * tFwd, a.y + uy * tFwd);
+  ctx.stroke();
+  ctx.restore();
 }

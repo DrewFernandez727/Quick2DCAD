@@ -56,6 +56,10 @@ export class RectTool implements Tool {
       { id: '__rl3', type: 'line', p1Id: '__rp3', p2Id: '__rp4', construction: false },
       { id: '__rl4', type: 'line', p1Id: '__rp4', p2Id: '__rp1', construction: false },
     ];
-    return { previewEntities: [p1, p2, p3, p4, ...lines] };
+    const W = Math.abs(x2 - x1).toFixed(2), H = Math.abs(y2 - y1).toFixed(2);
+    return {
+      previewEntities: [p1, p2, p3, p4, ...lines],
+      liveLabel: { worldPos: this.currentPt, text: `${W} × ${H} mm` },
+    };
   }
 }
