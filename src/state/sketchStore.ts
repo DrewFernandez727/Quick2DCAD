@@ -70,6 +70,9 @@ export interface SketchStore {
   setActiveTool(tool: ToolName): void;
   arcMode: 0 | 1 | 2;
   setArcMode(m: 0 | 1 | 2): void;
+  dimMode: 'smart' | 'linear' | 'horizontal' | 'vertical' | 'angle' | 'radius' | 'diameter';
+  setDimMode(m: SketchStore['dimMode']): void;
+  setConstraintLabelPos(id: ConstraintId, pos: Vec2): void;
 
   // Selection
   selectIds(ids: EntityId[]): void;
@@ -182,6 +185,7 @@ export const useSketchStore = create<SketchStore>()(
     viewport: { panX: 0, panY: 0, zoom: 50 }, // 50px per unit (1 unit = 1mm)
     activeTool: 'select',
     arcMode: 0,
+    dimMode: 'smart',
     selectedIds: new Set<EntityId>(),
     snapOptions: { ...DEFAULT_SNAP_OPTIONS },
     snapResult: null,
@@ -223,6 +227,10 @@ export const useSketchStore = create<SketchStore>()(
       s.selectedIds = new Set();
     }),
     setArcMode: (m) => set(s => { s.arcMode = m; }),
+    setDimMode: (m) => set(s => { s.dimMode = m; }),
+    setConstraintLabelPos: (id, pos) => set(s => {
+      if (s.constraints[id]) s.constraints[id].labelPos = pos;
+    }),
 
     // ── Selection ─────────────────────────────────────────────────────────────
     selectIds: (ids) => set(s => { s.selectedIds = new Set(ids); }),

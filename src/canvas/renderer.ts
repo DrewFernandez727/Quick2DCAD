@@ -55,6 +55,13 @@ function sw(p: Vec2, vp: Viewport, w: number, h: number): Vec2 {
 }
 
 // ─── Main render function ─────────────────────────────────────────────────────
+export interface DimPreview {
+  type: 'distance' | 'horizontalDistance' | 'verticalDistance' | 'angle' | 'radius' | 'diameter';
+  entityIds: EntityId[];
+  labelPos: Vec2;
+  labelText: string;
+}
+
 export interface RenderState {
   entities: Record<EntityId, Entity>;
   constraints: Record<ConstraintId, SketchConstraint>;
@@ -68,6 +75,9 @@ export interface RenderState {
   previewPoints?: Vec2[];
   previewEntities?: Entity[];
   selectionBox?: { x1: number; y1: number; x2: number; y2: number } | null;
+  // Dimension tool
+  dimPreview?: DimPreview | null;
+  highlightIds?: Set<EntityId>;
   // QoL overlays
   liveLabel?: { worldPos: Vec2; text: string } | null;
   orthoLock?: { anchor: Vec2; lockedPoint: Vec2 } | null;
@@ -83,9 +93,10 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState) {
   ctx.fillRect(0, 0, w, h);
 
   if (state.showGrid) drawGrid(ctx, vp, w, h, state.gridSize);
-  drawEntities(ctx, entities, constraints, selectedIds, overconstrained, vp, w, h);
+  drawEntities(ctx, entities, constraints, selectedIds, overconstrained, state.highlightIds, vp, w, h);
   drawConstraintIcons(ctx, entities, constraints, overconstrained, vp, w, h);
-  drawDimensions(ctx, entities, constraints, vp, w, h);
+  drawDimensions(ctx, entities, constraints, overconstrained, vp, w, h);
+  if (state.dimPreview) drawDimPreview(ctx, state.dimPreview, entities, vp, w, h);
   if (state.previewEntities) drawPreviewEntities(ctx, state.previewEntities, entities, vp, w, h);
   if (state.previewPoints) drawPreviewPoints(ctx, state.previewPoints, vp, w, h);
   if (state.selectionBox) drawSelectionBox(ctx, state.selectionBox, vp, w, h);
@@ -166,6 +177,7 @@ function drawEntities(
   constraints: Record<ConstraintId, SketchConstraint>,
   selectedIds: Set<EntityId>,
   overconstrained: Set<ConstraintId>,
+  highlightIds: Set<EntityId> | undefined,
   vp: Viewport, w: number, h: number
 ) {
   // Determine constrained point IDs (for coloring)
@@ -183,9 +195,10 @@ function drawEntities(
 
   for (const e of sortedEntities) {
     const isSelected = selectedIds.has(e.id);
+    const isHighlighted = highlightIds?.has(e.id) ?? false;
     const isConstruction = e.construction;
-    let color = isSelected ? C.selected : (isConstruction ? C.construction : C.normal);
-    let lineWidth = isSelected ? 2.5 : (isConstruction ? 1 : 1.5);
+    let color = isSelected ? C.selected : isHighlighted ? '#ffcc44' : (isConstruction ? C.construction : C.normal);
+    let lineWidth = (isSelected || isHighlighted) ? 2.5 : (isConstruction ? 1 : 1.5);
 
     ctx.save();
     ctx.strokeStyle = color;
@@ -474,216 +487,279 @@ function drawConstraintIcon(
 }
 
 // ─── Dimensional constraints ──────────────────────────────────────────────────
-const dimTypes: ConstraintType[] = [
-  'distance', 'horizontalDistance', 'verticalDistance', 'angle', 'radius', 'diameter'
+const DIM_TYPES: ConstraintType[] = [
+  'distance', 'horizontalDistance', 'verticalDistance', 'angle', 'radius', 'diameter',
 ];
+
+// Arrow tip at (tipX, tipY) coming from direction tail→tip
+function drawArrowTip(
+  ctx: CanvasRenderingContext2D,
+  tipX: number, tipY: number,
+  tailX: number, tailY: number,
+  size: number,
+) {
+  const dx = tipX - tailX, dy = tipY - tailY;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const wx = -uy * size * 0.35, wy = ux * size * 0.35;
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(tipX - ux * size + wx, tipY - uy * size + wy);
+  ctx.lineTo(tipX - ux * size - wx, tipY - uy * size - wy);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawDimLabelBox(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number,
+  text: string,
+  color: string,
+) {
+  ctx.font = 'bold 11px monospace';
+  const tw = ctx.measureText(text).width + 6;
+  const th = 14;
+  ctx.fillStyle = 'rgba(25,25,25,0.9)';
+  ctx.fillRect(cx - tw / 2, cy - th / 2, tw, th);
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, cx, cy);
+}
+
+function drawLinearDimAnnotation(
+  ctx: CanvasRenderingContext2D,
+  p1: Vec2, p2: Vec2,
+  label: string,
+  labelPos: Vec2,
+  type: 'distance' | 'horizontalDistance' | 'verticalDistance',
+  vp: Viewport, w: number, h: number,
+  color: string,
+) {
+  const GAP = 1.5 / vp.zoom;
+  const OVERSHOOT = 2 / vp.zoom;
+  const ARROW_PX = 6;
+
+  let dimPt1: Vec2, dimPt2: Vec2;
+  if (type === 'horizontalDistance') {
+    dimPt1 = { x: p1.x, y: labelPos.y };
+    dimPt2 = { x: p2.x, y: labelPos.y };
+  } else if (type === 'verticalDistance') {
+    dimPt1 = { x: labelPos.x, y: p1.y };
+    dimPt2 = { x: labelPos.x, y: p2.y };
+  } else {
+    const dx = p2.x - p1.x, dy = p2.y - p1.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const nx = -dy / d, ny = dx / d;
+    const perpOff = (labelPos.x - p1.x) * nx + (labelPos.y - p1.y) * ny;
+    dimPt1 = { x: p1.x + nx * perpOff, y: p1.y + ny * perpOff };
+    dimPt2 = { x: p2.x + nx * perpOff, y: p2.y + ny * perpOff };
+  }
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+
+  // Extension lines
+  ctx.globalAlpha = 0.75;
+  function extLine(from: Vec2, to: Vec2) {
+    const ex = to.x - from.x, ey = to.y - from.y;
+    const el = Math.hypot(ex, ey) || 1;
+    const ux = ex / el, uy = ey / el;
+    const ss = sw({ x: from.x + ux * GAP, y: from.y + uy * GAP }, vp, w, h);
+    const se2 = sw({ x: to.x + ux * OVERSHOOT, y: to.y + uy * OVERSHOOT }, vp, w, h);
+    ctx.beginPath(); ctx.moveTo(ss.x, ss.y); ctx.lineTo(se2.x, se2.y); ctx.stroke();
+  }
+  extLine(p1, dimPt1);
+  extLine(p2, dimPt2);
+  ctx.globalAlpha = 1;
+
+  const sd1 = sw(dimPt1, vp, w, h);
+  const sd2 = sw(dimPt2, vp, w, h);
+  const dimLenPx = Math.hypot(sd2.x - sd1.x, sd2.y - sd1.y);
+  ctx.beginPath(); ctx.moveTo(sd1.x, sd1.y); ctx.lineTo(sd2.x, sd2.y); ctx.stroke();
+
+  if (dimLenPx > ARROW_PX * 3.5) {
+    drawArrowTip(ctx, sd1.x, sd1.y, sd2.x, sd2.y, ARROW_PX);
+    drawArrowTip(ctx, sd2.x, sd2.y, sd1.x, sd1.y, ARROW_PX);
+  } else {
+    const ddx = sd2.x - sd1.x, ddy = sd2.y - sd1.y;
+    const ll = Math.hypot(ddx, ddy) || 1;
+    const oux = ddx / ll * ARROW_PX * 1.5, ouy = ddy / ll * ARROW_PX * 1.5;
+    drawArrowTip(ctx, sd1.x - oux, sd1.y - ouy, sd1.x + oux, sd1.y + ouy, ARROW_PX);
+    drawArrowTip(ctx, sd2.x + oux, sd2.y + ouy, sd2.x - oux, sd2.y - ouy, ARROW_PX);
+  }
+
+  const lx = (sd1.x + sd2.x) / 2, ly = (sd1.y + sd2.y) / 2;
+  drawDimLabelBox(ctx, lx, ly, label, color);
+  ctx.restore();
+}
+
+function drawRadiusDimAnnotation(
+  ctx: CanvasRenderingContext2D,
+  center: Vec2, radius: number,
+  label: string,
+  labelPos: Vec2 | undefined,
+  vp: Viewport, w: number, h: number,
+  color: string,
+) {
+  let angle = Math.PI / 4;
+  if (labelPos) angle = Math.atan2(labelPos.y - center.y, labelPos.x - center.x);
+  const onCircle = { x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius };
+  const labelWorld = { x: center.x + Math.cos(angle) * (radius + 10 / vp.zoom), y: center.y + Math.sin(angle) * (radius + 10 / vp.zoom) };
+
+  const sc = sw(center, vp, w, h);
+  const so = sw(onCircle, vp, w, h);
+  const sl = sw(labelWorld, vp, w, h);
+
+  ctx.save();
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 1; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(sc.x, sc.y); ctx.lineTo(so.x, so.y); ctx.stroke();
+  drawArrowTip(ctx, so.x, so.y, sc.x, sc.y, 6);
+  drawDimLabelBox(ctx, sl.x, sl.y, label, color);
+  ctx.restore();
+}
+
+function drawAngleDimAnnotation(
+  ctx: CanvasRenderingContext2D,
+  l1: LineEntity, l2: LineEntity,
+  label: string,
+  labelPos: Vec2 | undefined,
+  entities: Record<EntityId, Entity>,
+  vp: Viewport, w: number, h: number,
+  color: string,
+) {
+  const a = entities[l1.p1Id] as PointEntity | undefined;
+  const b = entities[l1.p2Id] as PointEntity | undefined;
+  const c = entities[l2.p1Id] as PointEntity | undefined;
+  const d = entities[l2.p2Id] as PointEntity | undefined;
+  if (!a || !b || !c || !d) return;
+
+  const denom = (b.x - a.x) * (d.y - c.y) - (b.y - a.y) * (d.x - c.x);
+  if (Math.abs(denom) < 1e-9) return;
+  const t = ((c.x - a.x) * (d.y - c.y) - (c.y - a.y) * (d.x - c.x)) / denom;
+  const intersect: Vec2 = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+
+  const ang1 = Math.atan2(b.y - a.y, b.x - a.x);
+  const ang2 = Math.atan2(d.y - c.y, d.x - c.x);
+
+  const arcR = labelPos
+    ? Math.hypot(labelPos.x - intersect.x, labelPos.y - intersect.y)
+    : 15 / vp.zoom;
+
+  // Choose arc sector closest to labelPos
+  let startAng = ang1, endAng = ang2;
+  while (endAng < startAng) endAng += Math.PI * 2;
+  if (labelPos) {
+    const midAng = Math.atan2(labelPos.y - intersect.y, labelPos.x - intersect.x);
+    const midNorm = ((midAng - startAng) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+    if (midNorm > endAng - startAng) {
+      startAng = ang2; endAng = ang1;
+      while (endAng < startAng) endAng += Math.PI * 2;
+    }
+  }
+
+  const si = sw(intersect, vp, w, h);
+  ctx.save();
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 1; ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(si.x, si.y, arcR * vp.zoom, -endAng, -startAng, false);
+  ctx.stroke();
+
+  const midAngFinal = (startAng + endAng) / 2;
+  const labelW = { x: intersect.x + Math.cos(midAngFinal) * arcR, y: intersect.y + Math.sin(midAngFinal) * arcR };
+  const ls = sw(labelW, vp, w, h);
+  drawDimLabelBox(ctx, ls.x, ls.y, label, color);
+  ctx.restore();
+}
+
+function formatDimLabel(c: SketchConstraint): string {
+  if (c.value === undefined) return '';
+  if (c.type === 'angle') return `${c.value.toFixed(1)}°`;
+  if (c.type === 'diameter') return `⌀${c.value.toFixed(2)}`;
+  if (c.type === 'radius') return `R${c.value.toFixed(2)}`;
+  return c.value.toFixed(2);
+}
+
+function dispatchDimAnnotation(
+  ctx: CanvasRenderingContext2D,
+  type: 'distance' | 'horizontalDistance' | 'verticalDistance' | 'angle' | 'radius' | 'diameter',
+  entityIds: EntityId[],
+  label: string,
+  labelPos: Vec2 | undefined,
+  entities: Record<EntityId, Entity>,
+  vp: Viewport, w: number, h: number,
+  color: string,
+) {
+  switch (type) {
+    case 'distance':
+    case 'horizontalDistance':
+    case 'verticalDistance': {
+      if (entityIds.length < 2) break;
+      const p1 = getEntityCenter(entities[entityIds[0]], entities);
+      const p2 = getEntityCenter(entities[entityIds[1]], entities);
+      if (!p1 || !p2) break;
+      const defLabelPos = labelPos ?? { x: (p1.x + p2.x) / 2, y: Math.max(p1.y, p2.y) + 12 / vp.zoom };
+      drawLinearDimAnnotation(ctx, p1, p2, label, defLabelPos, type, vp, w, h, color);
+      break;
+    }
+    case 'radius':
+    case 'diameter': {
+      if (entityIds.length < 1) break;
+      const e = entities[entityIds[0]];
+      if (!e || (e.type !== 'circle' && e.type !== 'arc')) break;
+      const center = getPoint(entities, (e as CircleEntity | ArcEntity).centerId);
+      if (!center) break;
+      drawRadiusDimAnnotation(ctx, center, e.radius, label, labelPos, vp, w, h, color);
+      break;
+    }
+    case 'angle': {
+      if (entityIds.length < 2) break;
+      const l1 = entities[entityIds[0]] as LineEntity | undefined;
+      const l2 = entities[entityIds[1]] as LineEntity | undefined;
+      if (!l1 || l1.type !== 'line' || !l2 || l2.type !== 'line') break;
+      drawAngleDimAnnotation(ctx, l1, l2, label, labelPos, entities, vp, w, h, color);
+      break;
+    }
+  }
+}
 
 function drawDimensions(
   ctx: CanvasRenderingContext2D,
   entities: Record<EntityId, Entity>,
   constraints: Record<ConstraintId, SketchConstraint>,
-  vp: Viewport, w: number, h: number
-) {
-  for (const c of Object.values(constraints)) {
-    if (!dimTypes.includes(c.type)) continue;
-    drawDimensionAnnotation(ctx, c, entities, vp, w, h);
-  }
-}
-
-function drawDimensionAnnotation(
-  ctx: CanvasRenderingContext2D,
-  c: SketchConstraint,
-  entities: Record<EntityId, Entity>,
-  vp: Viewport, w: number, h: number
-) {
-  if (c.value === undefined) return;
-  const value = c.type === 'angle' ? `${c.value.toFixed(1)}°` :
-                c.type === 'diameter' ? `⌀${c.value.toFixed(2)}` :
-                `${c.value.toFixed(2)}`;
-
-  ctx.save();
-  ctx.strokeStyle = C.dim;
-  ctx.fillStyle = C.dimText;
-  ctx.lineWidth = 1;
-  ctx.font = 'bold 11px monospace';
-
-  switch (c.type) {
-    case 'distance': {
-      if (c.entityIds.length < 2) break;
-      const e1 = entities[c.entityIds[0]];
-      const e2 = entities[c.entityIds[1]];
-      const p1 = getEntityCenter(e1, entities);
-      const p2 = getEntityCenter(e2, entities);
-      if (!p1 || !p2) break;
-      drawLinearDim(ctx, p1, p2, value, c.labelPos, vp, w, h, false);
-      break;
-    }
-    case 'horizontalDistance': {
-      if (c.entityIds.length < 2) break;
-      const e1 = entities[c.entityIds[0]];
-      const e2 = entities[c.entityIds[1]];
-      const p1 = getEntityCenter(e1, entities);
-      const p2 = getEntityCenter(e2, entities);
-      if (!p1 || !p2) break;
-      drawLinearDim(ctx, p1, p2, value, c.labelPos, vp, w, h, true, 'horizontal');
-      break;
-    }
-    case 'verticalDistance': {
-      if (c.entityIds.length < 2) break;
-      const e1 = entities[c.entityIds[0]];
-      const e2 = entities[c.entityIds[1]];
-      const p1 = getEntityCenter(e1, entities);
-      const p2 = getEntityCenter(e2, entities);
-      if (!p1 || !p2) break;
-      drawLinearDim(ctx, p1, p2, value, c.labelPos, vp, w, h, true, 'vertical');
-      break;
-    }
-    case 'radius': {
-      if (c.entityIds.length < 1) break;
-      const e = entities[c.entityIds[0]];
-      if (!e || (e.type !== 'circle' && e.type !== 'arc')) break;
-      const center = getPoint(entities, (e as CircleEntity | ArcEntity).centerId);
-      if (!center) break;
-      drawRadiusDim(ctx, center, e.radius, `R${value}`, vp, w, h);
-      break;
-    }
-    case 'diameter': {
-      if (c.entityIds.length < 1) break;
-      const e = entities[c.entityIds[0]];
-      if (!e || e.type !== 'circle') break;
-      const center = getPoint(entities, (e as CircleEntity).centerId);
-      if (!center) break;
-      drawRadiusDim(ctx, center, e.radius, value, vp, w, h);
-      break;
-    }
-    case 'angle': {
-      if (c.entityIds.length < 2) break;
-      drawAngleDim(ctx, c, entities, value, vp, w, h);
-      break;
-    }
-  }
-
-  ctx.restore();
-}
-
-function drawLinearDim(
-  ctx: CanvasRenderingContext2D,
-  p1: Vec2, p2: Vec2, label: string,
-  labelPos: Vec2 | undefined,
+  overconstrained: Set<ConstraintId>,
   vp: Viewport, w: number, h: number,
-  projected: boolean,
-  direction?: 'horizontal' | 'vertical'
 ) {
-  let a = p1, b = p2;
-  if (direction === 'horizontal') {
-    b = { x: p2.x, y: p1.y };
-  } else if (direction === 'vertical') {
-    b = { x: p1.x, y: p2.y };
+  ctx.font = 'bold 11px monospace';
+  for (const c of Object.values(constraints)) {
+    if (!DIM_TYPES.includes(c.type) || c.value === undefined) continue;
+    const isOC = overconstrained.has(c.id);
+    dispatchDimAnnotation(
+      ctx, c.type as any, c.entityIds,
+      formatDimLabel(c), c.labelPos, entities, vp, w, h,
+      isOC ? C.overConstrained : C.dim,
+    );
   }
-
-  const offset = labelPos ?? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + 8 / vp.zoom };
-
-  const sa = sw(a, vp, w, h);
-  const sb = sw(b, vp, w, h);
-  const sl = sw(offset, vp, w, h);
-
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath();
-  ctx.moveTo(sa.x, sa.y);
-  ctx.lineTo(sl.x, sl.y);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(sb.x, sb.y);
-  ctx.lineTo(sl.x, sl.y);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Dimension line
-  ctx.beginPath();
-  ctx.moveTo(sa.x, sa.y);
-  ctx.lineTo(sb.x, sb.y);
-  ctx.stroke();
-
-  // Label background
-  const metrics = ctx.measureText(label);
-  const tw = metrics.width + 6;
-  const th = 14;
-  ctx.fillStyle = 'rgba(30,30,30,0.85)';
-  ctx.fillRect(sl.x - tw / 2, sl.y - th / 2, tw, th);
-  ctx.fillStyle = C.dimText;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, sl.x, sl.y);
 }
 
-function drawRadiusDim(
+function drawDimPreview(
   ctx: CanvasRenderingContext2D,
-  center: Vec2, radius: number, label: string,
-  vp: Viewport, w: number, h: number
-) {
-  const angle = Math.PI / 4;
-  const endPt = circlePoint(center, radius, angle);
-  const extPt = circlePoint(center, radius * 1.3, angle);
-
-  const sc = sw(center, vp, w, h);
-  const se = sw(endPt, vp, w, h);
-  const sx = sw(extPt, vp, w, h);
-
-  ctx.setLineDash([]);
-  ctx.beginPath();
-  ctx.moveTo(sc.x, sc.y);
-  ctx.lineTo(se.x, se.y);
-  ctx.stroke();
-
-  // Arrow at circle
-  drawArrowhead(ctx, sc, se);
-
-  const metrics = ctx.measureText(label);
-  const tw = metrics.width + 6;
-  const th = 14;
-  ctx.fillStyle = 'rgba(30,30,30,0.85)';
-  ctx.fillRect(sx.x, sx.y - th / 2, tw, th);
-  ctx.fillStyle = C.dimText;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, sx.x + 3, sx.y);
-}
-
-function drawAngleDim(
-  ctx: CanvasRenderingContext2D,
-  c: SketchConstraint,
+  preview: { type: string; entityIds: EntityId[]; labelPos: Vec2; labelText: string },
   entities: Record<EntityId, Entity>,
-  label: string,
-  vp: Viewport, w: number, h: number
+  vp: Viewport, w: number, h: number,
 ) {
-  // Simplified: just draw text at midpoint between entity centers
-  const e1 = entities[c.entityIds[0]];
-  const e2 = entities[c.entityIds[1]];
-  const p1 = getEntityCenter(e1, entities);
-  const p2 = getEntityCenter(e2, entities);
-  if (!p1 || !p2) return;
-  const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
-  const s = sw(mid, vp, w, h);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = C.dimText;
-  ctx.fillText(label, s.x, s.y);
+  if (!preview.labelText) return;
+  ctx.font = 'bold 11px monospace';
+  dispatchDimAnnotation(
+    ctx, preview.type as any, preview.entityIds,
+    preview.labelText, preview.labelPos, entities, vp, w, h,
+    'rgba(160,220,255,0.9)',
+  );
 }
 
-function drawArrowhead(ctx: CanvasRenderingContext2D, from: Vec2, to: Vec2) {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const len = Math.sqrt(dx * dx + dy * dy);
-  if (len === 0) return;
-  const ux = dx / len, uy = dy / len;
-  const size = 8;
-  ctx.beginPath();
-  ctx.moveTo(from.x, from.y);
-  ctx.lineTo(from.x + ux * size - uy * size * 0.4, from.y + uy * size + ux * size * 0.4);
-  ctx.lineTo(from.x + ux * size + uy * size * 0.4, from.y + uy * size - ux * size * 0.4);
-  ctx.closePath();
-  ctx.fill();
-}
 
 // ─── Live label (dimension display while drawing) ─────────────────────────────
 function drawLiveLabel(

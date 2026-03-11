@@ -32,6 +32,7 @@ export function StatusBar() {
     point: 'Click to place point',
     construction: 'Select entities to toggle construction geometry',
     trim: 'Hover over a line segment between intersections • Click to trim • Esc to cancel',
+    dim: 'Click entity to dimension • (2nd click for second entity) • Move mouse to position • Click to place • Esc to cancel',
   };
 
   return (

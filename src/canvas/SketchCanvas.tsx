@@ -11,6 +11,7 @@ import { RectTool } from '../tools/RectTool';
 import { PolygonTool } from '../tools/PolygonTool';
 import { PointTool } from '../tools/PointTool';
 import { TrimTool } from '../tools/TrimTool';
+import { DimensionTool } from '../tools/DimensionTool';
 import { Tool } from '../tools/types';
 import type { Vec2, SnapResult } from '../geometry/types';
 import { hitTestAll } from './hitTest';
@@ -26,6 +27,7 @@ const tools: Record<string, Tool> = {
   polygon: new PolygonTool(),
   point: new PointTool(),
   trim: new TrimTool(),
+  dim: new DimensionTool(),
 };
 
 // ─── Ortho lock helper ────────────────────────────────────────────────────────
@@ -100,6 +102,8 @@ export function SketchCanvas() {
       previewEntities: overlay.previewEntities ?? [],
       selectionBox: overlay.selectionBox ?? null,
       liveLabel: (overlay as any).liveLabel ?? null,
+      dimPreview: (overlay as any).dimPreview ?? null,
+      highlightIds: (overlay as any).highlightIds,
       orthoLock,
     };
 
@@ -287,7 +291,7 @@ export function SketchCanvas() {
       // Tool shortcuts
       const toolKeys: Record<string, string> = {
         's': 'select', 'l': 'line', 'c': 'circle', 'a': 'arc',
-        'r': 'rect', 'p': 'point', 'g': 'polygon', 't': 'trim',
+        'r': 'rect', 'p': 'point', 'g': 'polygon', 't': 'trim', 'd': 'dim',
       };
       if (!e.ctrlKey && !e.metaKey && !e.altKey && toolKeys[e.key.toLowerCase()]) {
         const prev = tools[store.activeTool];
