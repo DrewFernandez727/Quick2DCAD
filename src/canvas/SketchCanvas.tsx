@@ -13,6 +13,8 @@ import { PointTool } from '../tools/PointTool';
 import { TrimTool } from '../tools/TrimTool';
 import { Tool } from '../tools/types';
 import type { Vec2, SnapResult } from '../geometry/types';
+import { hitTestAll } from './hitTest';
+import { applyConstraintToIds } from '../components/ConstraintBar';
 
 // ─── Tool instances ───────────────────────────────────────────────────────────
 const tools: Record<string, Tool> = {
@@ -48,12 +50,19 @@ export function SketchCanvas() {
 
   const store = useSketchStore();
 
-  // ─── Register global solve trigger ─────────────────────────────────────────
+  // ─── Register globals ────────────────────────────────────────────────────────
   useEffect(() => {
     (window as any).__triggerSolve = () => {
       try { solve(); } catch { solveSimple(); }
     };
-    return () => { delete (window as any).__triggerSolve; };
+    (window as any).__cancelActiveTool = () => {
+      const s = useSketchStore.getState();
+      tools[s.activeTool]?.cancel();
+    };
+    return () => {
+      delete (window as any).__triggerSolve;
+      delete (window as any).__cancelActiveTool;
+    };
   }, []);
 
   // ─── Render loop ─────────────────────────────────────────────────────────────
@@ -86,7 +95,7 @@ export function SketchCanvas() {
       overconstrained: store.overconstrained,
       snapResult: store.snapResult,
       gridSize: store.gridSize,
-      showGrid: store.showGrid,
+      showGrid: store.showGrid && store.snapOptions.grid,
       previewPoints: overlay.previewPoints,
       previewEntities: overlay.previewEntities ?? [],
       selectionBox: overlay.selectionBox ?? null,
@@ -175,7 +184,30 @@ export function SketchCanvas() {
     if (e.button !== 0) return;
 
     const { world, snap } = toWorldSnap(sx, sy, isShiftDown.current);
-    const activeTool = tools[useSketchStore.getState().activeTool];
+    const store = useSketchStore.getState();
+
+    // ── Constraint picking mode ───────────────────────────────────────────────
+    const { pendingConstraint } = store;
+    if (pendingConstraint) {
+      const hits = hitTestAll(world, store.entities, store.viewport.zoom);
+      const topHit = hits[0];
+      if (topHit) {
+        const { type, minEntities, collectedIds } = pendingConstraint;
+        const newIds = [...collectedIds, topHit];
+        store.selectIds(newIds);
+        if (newIds.length >= minEntities) {
+          applyConstraintToIds(type, newIds);
+          // Reset for next pick — loop until Esc
+          store.setPendingConstraint({ type, minEntities });
+        } else {
+          useSketchStore.setState(s => { if (s.pendingConstraint) s.pendingConstraint.collectedIds = newIds; });
+        }
+      }
+      return; // don't forward to tool
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const activeTool = tools[store.activeTool];
     activeTool?.onMouseDown(world, e.nativeEvent, snap);
   }, [toWorldSnap]);
 
@@ -244,9 +276,11 @@ export function SketchCanvas() {
       }
 
       if (e.key === 'Escape') {
+        store.setPendingConstraint(null);
         const t = tools[store.activeTool];
         t?.cancel();
         store.clearSelection();
+        store.setActiveTool('select');
         return;
       }
 
@@ -258,6 +292,7 @@ export function SketchCanvas() {
       if (!e.ctrlKey && !e.metaKey && !e.altKey && toolKeys[e.key.toLowerCase()]) {
         const prev = tools[store.activeTool];
         prev?.cancel();
+        store.setPendingConstraint(null);
         store.setActiveTool(toolKeys[e.key.toLowerCase()] as any);
         return;
       }

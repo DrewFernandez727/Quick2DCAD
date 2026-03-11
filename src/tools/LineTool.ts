@@ -97,11 +97,16 @@ export class LineTool implements Tool {
     const previewP2: Entity = { id: '__prev_p2', type: 'point', x: this.currentPt.x, y: this.currentPt.y, construction: false };
     const previewLine: Entity = { id: '__prev_ln', type: 'line', p1Id: '__prev_p1', p2Id: '__prev_p2', construction: false };
     const d = dist(this.startPt, this.currentPt);
-    const angleDeg = Math.atan2(this.currentPt.y - this.startPt.y, this.currentPt.x - this.startPt.x) * 180 / Math.PI;
+    const angle = Math.atan2(this.currentPt.y - this.startPt.y, this.currentPt.x - this.startPt.x);
+    const angleDeg = angle * 180 / Math.PI;
+    const THRESH = 2 * Math.PI / 180; // 2° — matches autoConstrainLineAngle
+    const willBeH = Math.abs(angle) < THRESH || Math.abs(Math.abs(angle) - Math.PI) < THRESH;
+    const willBeV = Math.abs(Math.abs(angle) - Math.PI / 2) < THRESH;
+    const hint = willBeV ? '  → V' : willBeH ? '  → H' : '';
     return {
-      previewEntities: [previewLine],
+      previewEntities: [previewP1, previewP2, previewLine],
       previewPoints: [this.startPt, this.currentPt],
-      liveLabel: { worldPos: this.currentPt, text: `${d.toFixed(2)}mm  ${angleDeg.toFixed(1)}°` },
+      liveLabel: { worldPos: this.currentPt, text: `${d.toFixed(2)}mm  ${angleDeg.toFixed(1)}°${hint}` },
     };
   }
 }

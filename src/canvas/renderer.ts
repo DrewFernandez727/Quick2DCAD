@@ -265,8 +265,8 @@ function drawPreviewEntities(
   vp: Viewport, w: number, h: number
 ) {
   ctx.save();
-  ctx.strokeStyle = C.preview;
-  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = 'rgba(160,200,255,0.9)';
+  ctx.setLineDash([]);
   ctx.lineWidth = 1.5;
 
   for (const e of previewEntities) {

@@ -65,7 +65,7 @@ export class CircleTool implements Tool {
     const previewCenter: Entity = { id: '__prev_c', type: 'point', x: this.centerPt.x, y: this.centerPt.y, construction: false };
     const previewCircle: Entity = { id: '__prev_ci', type: 'circle', centerId: '__prev_c', radius, construction: false };
     return {
-      previewEntities: [previewCircle],
+      previewEntities: [previewCenter, previewCircle],
       previewPoints: [this.centerPt],
       liveLabel: { worldPos: this.currentPt, text: `R ${radius.toFixed(2)}mm  ⌀${(radius * 2).toFixed(2)}mm` },
     };

@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useSketchStore } from '../state/sketchStore';
+import { SettingsPanel } from './SettingsPanel';
 
 export function StatusBar() {
   const cursorPos = useSketchStore(s => s.cursorPos);
@@ -8,13 +10,15 @@ export function StatusBar() {
   const selectedIds = useSketchStore(s => s.selectedIds);
   const entities = useSketchStore(s => s.entities);
   const constraints = useSketchStore(s => s.constraints);
-  const solveStatus = useSketchStore(s => s.solveStatus);
   const orthoActive = useSketchStore(s => s.orthoActive);
+  const pendingConstraint = useSketchStore(s => s.pendingConstraint);
+
+  const [showSettings, setShowSettings] = useState(false);
 
   const entityCount = Object.keys(entities).length;
   const constraintCount = Object.keys(constraints).length;
   const selectedCount = selectedIds.size;
-  const zoomPct = Math.round(viewport.zoom * 2); // approx screen px per 2 units
+  const zoomPct = Math.round(viewport.zoom * 2);
 
   const snapLabel = snapResult ? `Snap: ${snapResult.type}` : '';
 
@@ -24,7 +28,7 @@ export function StatusBar() {
     circle: 'Click to place center • Click for radius',
     arc: 'Click center • Click radius • Click end angle',
     rect: 'Click first corner • Click opposite corner',
-    polygon: 'Click center • Click radius (press 3-9 to change sides)',
+    polygon: 'Click center • Click radius (press 3–9 to change sides)',
     point: 'Click to place point',
     construction: 'Select entities to toggle construction geometry',
     trim: 'Hover over a line segment between intersections • Click to trim • Esc to cancel',
@@ -65,14 +69,29 @@ export function StatusBar() {
       )}
       <span style={styles.sep}>|</span>
       <span style={{ ...styles.item, color: '#555', fontSize: '10px' }} title="Hold Alt while drawing to disable auto-constraints">AUTO</span>
+
+      {/* Pending constraint hint — replaces tool hint */}
       <span style={{ flex: 1 }} />
-      <span style={{ ...styles.item, fontSize: '10px', color: '#555', maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {TOOL_HINTS[activeTool]}
-      </span>
+      {pendingConstraint ? (
+        <span style={{ ...styles.item, color: '#4a9fcc', fontWeight: 500 }}>
+          «{pendingConstraint.type}» — click {pendingConstraint.minEntities - pendingConstraint.collectedIds.length} more {pendingConstraint.minEntities - pendingConstraint.collectedIds.length === 1 ? 'entity' : 'entities'} (Esc to cancel)
+        </span>
+      ) : (
+        <span style={{ ...styles.item, fontSize: '10px', color: '#555', maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {TOOL_HINTS[activeTool]}
+        </span>
+      )}
       <span style={styles.sep}>|</span>
       <span style={styles.item} title="Scroll to zoom • Middle-drag or Space+drag to pan • Right-click to cancel">
         Scroll=zoom  Space=pan
       </span>
+      <span style={styles.sep}>|</span>
+      <button
+        style={styles.settingsBtn}
+        onClick={() => setShowSettings(v => !v)}
+        title="UI settings"
+      >⚙</button>
+      {showSettings && <SettingsPanel />}
     </div>
   );
 }
@@ -81,10 +100,10 @@ const styles: Record<string, React.CSSProperties> = {
   bar: {
     display: 'flex',
     alignItems: 'center',
-    height: '24px',
+    height: '28px',
     background: '#1a1a1a',
     borderTop: '1px solid #333',
-    padding: '0 10px',
+    padding: '0 8px',
     gap: '8px',
     flexShrink: 0,
     overflow: 'hidden',
@@ -100,5 +119,15 @@ const styles: Record<string, React.CSSProperties> = {
   sep: {
     color: '#333',
     fontSize: '11px',
+  },
+  settingsBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: '#666',
+    fontSize: '14px',
+    cursor: 'pointer',
+    padding: '0 2px',
+    lineHeight: 1,
+    flexShrink: 0,
   },
 };
