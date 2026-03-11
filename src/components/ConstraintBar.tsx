@@ -36,43 +36,44 @@ const DIMENSIONAL_CONSTRAINTS: ConstraintDef[] = [
   { type: 'diameter',           label: 'Diameter',    icon: '⌀',  minEntities: 1, tooltip: 'Diameter of circle' },
 ];
 
-function applyConstraint(type: ConstraintType, minEntities: number) {
+export function applyConstraintToIds(type: ConstraintType, entityIds: string[]) {
   const store = useSketchStore.getState();
-  const selected = Array.from(store.selectedIds);
-
-  if (selected.length < minEntities) {
-    alert(`Select at least ${minEntities} entit${minEntities === 1 ? 'y' : 'ies'} first.`);
-    return;
-  }
-
   const isDimensional = ['distance','horizontalDistance','verticalDistance','angle','radius','diameter'].includes(type);
-
   if (isDimensional) {
-    // First add the constraint, then open dialog for value
-    const id = store.addConstraint({
-      type,
-      entityIds: selected,
-      driving: true,
-      value: undefined,
-    });
+    const id = store.addConstraint({ type, entityIds, driving: true, value: undefined });
     store.openDimensionDialog(id);
   } else {
     store.pushHistory();
-    store.addConstraint({
-      type,
-      entityIds: selected,
-      driving: true,
-    });
+    store.addConstraint({ type, entityIds, driving: true });
     try { solve(); } catch { solveSimple(); }
   }
 }
 
+function applyConstraint(type: ConstraintType, minEntities: number) {
+  const store = useSketchStore.getState();
+  const selected = Array.from(store.selectedIds);
+
+  if (selected.length >= minEntities) {
+    applyConstraintToIds(type, selected);
+    return;
+  }
+
+  // Not enough selected — enter picking mode
+  store.setPendingConstraint({ type, minEntities });
+  store.setActiveTool('select');
+}
+
 export function ConstraintBar() {
-  const selectedIds = useSketchStore(s => s.selectedIds);
   const solveStatus = useSketchStore(s => s.solveStatus);
+  const pendingConstraint = useSketchStore(s => s.pendingConstraint);
 
   const statusColor = solveStatus === 'ok' ? '#4ec94e' : solveStatus === 'redundant' ? '#f5c842' : '#ff4444';
   const statusLabel = solveStatus === 'ok' ? 'Solved' : solveStatus === 'redundant' ? 'Redundant' : 'Over-constrained';
+
+  const btnStyle = (type: ConstraintType) => ({
+    ...styles.btn,
+    ...(pendingConstraint?.type === type ? styles.btnPending : {}),
+  });
 
   return (
     <div style={styles.container}>
@@ -88,7 +89,7 @@ export function ConstraintBar() {
           <button
             key={c.type}
             onClick={() => applyConstraint(c.type, c.minEntities)}
-            style={styles.btn}
+            style={btnStyle(c.type)}
             title={c.tooltip}
           >
             <span style={styles.icon}>{c.icon}</span>
@@ -103,7 +104,7 @@ export function ConstraintBar() {
           <button
             key={c.type}
             onClick={() => applyConstraint(c.type, c.minEntities)}
-            style={styles.btn}
+            style={btnStyle(c.type)}
             title={c.tooltip}
           >
             <span style={styles.icon}>{c.icon}</span>
@@ -214,6 +215,11 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     fontSize: '10px',
     gap: '2px',
+  },
+  btnPending: {
+    background: '#1a6fa8',
+    border: '1px solid #4a9fcc',
+    color: '#fff',
   },
   icon: { fontSize: '13px', lineHeight: 1 },
   label: { fontSize: '7px', opacity: 0.7 },

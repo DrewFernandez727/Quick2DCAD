@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import {
-  Entity, EntityId, SketchConstraint, ConstraintId,
+  Entity, EntityId, SketchConstraint, ConstraintId, ConstraintType,
   Viewport, ToolName, SnapResult, Vec2, SketchState,
   PointEntity, LineEntity, CircleEntity, ArcEntity
 } from '../geometry/types';
@@ -46,6 +46,14 @@ export interface SketchStore {
 
   // Dimension dialog
   dimensionDialog: { open: boolean; constraintId: ConstraintId | null; value: string };
+
+  // UI scale
+  uiScale: number;
+  setUiScale(s: number): void;
+
+  // Pending constraint pick mode
+  pendingConstraint: { type: ConstraintType; minEntities: number; collectedIds: EntityId[] } | null;
+  setPendingConstraint(c: { type: ConstraintType; minEntities: number } | null): void;
 
   // History
   _history: HistoryEntry[];
@@ -128,6 +136,27 @@ function cloneSketch(
   };
 }
 
+// ─── Arc endpoint sync ───────────────────────────────────────────────────────
+function syncArcEndpoints(s: { entities: Record<EntityId, Entity> }, arcId: EntityId): void {
+  const arc = s.entities[arcId] as ArcEntity | undefined;
+  if (!arc || arc.type !== 'arc' || !arc.startPtId || !arc.endPtId) return;
+  const center = s.entities[arc.centerId] as PointEntity | undefined;
+  if (!center) return;
+  const sp = s.entities[arc.startPtId] as PointEntity | undefined;
+  const ep = s.entities[arc.endPtId] as PointEntity | undefined;
+  if (sp) { sp.x = center.x + arc.radius * Math.cos(arc.startAngle); sp.y = center.y + arc.radius * Math.sin(arc.startAngle); }
+  if (ep) { ep.x = center.x + arc.radius * Math.cos(arc.endAngle); ep.y = center.y + arc.radius * Math.sin(arc.endAngle); }
+}
+
+// Sync all arcs that reference a given point as their center
+function syncArcsForCenter(s: { entities: Record<EntityId, Entity> }, pointId: EntityId): void {
+  for (const e of Object.values(s.entities)) {
+    if (e.type === 'arc' && (e as ArcEntity).centerId === pointId) {
+      syncArcEndpoints(s, e.id);
+    }
+  }
+}
+
 // ─── Store implementation ────────────────────────────────────────────────────
 export const useSketchStore = create<SketchStore>()(
   immer((set, get) => ({
@@ -145,6 +174,8 @@ export const useSketchStore = create<SketchStore>()(
     overconstrained: new Set<ConstraintId>(),
     cursorPos: { x: 0, y: 0 },
     dimensionDialog: { open: false, constraintId: null, value: '' },
+    uiScale: 1.0,
+    pendingConstraint: null,
     _history: [],
     _historyIndex: -1,
 
@@ -255,11 +286,25 @@ export const useSketchStore = create<SketchStore>()(
     },
 
     addArc: (centerId, radius, startAngle, endAngle, construction = false) => {
-      const id = newId('ar');
+      const arcId = newId('ar');
+      const startPtId = newId('pt');
+      const endPtId = newId('pt');
       set(s => {
-        s.entities[id] = { id, type: 'arc', centerId, radius, startAngle, endAngle, construction };
+        const center = s.entities[centerId] as PointEntity | undefined;
+        const cx = center?.x ?? 0, cy = center?.y ?? 0;
+        s.entities[startPtId] = {
+          id: startPtId, type: 'point', construction,
+          x: cx + radius * Math.cos(startAngle),
+          y: cy + radius * Math.sin(startAngle),
+        };
+        s.entities[endPtId] = {
+          id: endPtId, type: 'point', construction,
+          x: cx + radius * Math.cos(endAngle),
+          y: cy + radius * Math.sin(endAngle),
+        };
+        s.entities[arcId] = { id: arcId, type: 'arc', centerId, radius, startAngle, endAngle, construction, startPtId, endPtId };
       });
-      return id;
+      return arcId;
     },
 
     addRect: (x1, y1, x2, y2, construction = false) => {
@@ -348,6 +393,7 @@ export const useSketchStore = create<SketchStore>()(
     movePoint: (id, x, y) => set(s => {
       const e = s.entities[id];
       if (e && e.type === 'point') { e.x = x; e.y = y; }
+      syncArcsForCenter(s, id);
     }),
 
     moveEntities: (ids, dx, dy) => set(s => {
@@ -363,6 +409,10 @@ export const useSketchStore = create<SketchStore>()(
       for (const pid of pointIds) {
         const p = s.entities[pid];
         if (p && p.type === 'point') { p.x += dx; p.y += dy; }
+      }
+      // Sync arc endpoints after all points have moved
+      for (const id of ids) {
+        if (s.entities[id]?.type === 'arc') syncArcEndpoints(s, id);
       }
     }),
 
@@ -384,6 +434,11 @@ export const useSketchStore = create<SketchStore>()(
           );
           if (!usedByOther) toDelete.add(centerId);
         }
+        if (e.type === 'arc') {
+          const arc = e as ArcEntity;
+          if (arc.startPtId) toDelete.add(arc.startPtId);
+          if (arc.endPtId) toDelete.add(arc.endPtId);
+        }
       }
       for (const id of toDelete) delete s.entities[id];
       // Remove constraints referencing deleted entities
@@ -402,12 +457,13 @@ export const useSketchStore = create<SketchStore>()(
 
     updateRadius: (id, radius) => set(s => {
       const e = s.entities[id];
-      if (e && (e.type === 'circle' || e.type === 'arc')) e.radius = radius;
+      if (e && (e.type === 'circle' || e.type === 'arc')) { e.radius = radius; }
+      if (s.entities[id]?.type === 'arc') syncArcEndpoints(s, id);
     }),
 
     updateArcAngles: (id, startAngle, endAngle) => set(s => {
       const e = s.entities[id];
-      if (e && e.type === 'arc') { e.startAngle = startAngle; e.endAngle = endAngle; }
+      if (e && e.type === 'arc') { e.startAngle = startAngle; e.endAngle = endAngle; syncArcEndpoints(s, id); }
     }),
 
     // ── Constraints ───────────────────────────────────────────────────────────
@@ -427,6 +483,7 @@ export const useSketchStore = create<SketchStore>()(
     updateEntityFromSolver: (id, x, y) => set(s => {
       const e = s.entities[id];
       if (e && e.type === 'point') { e.x = x; e.y = y; }
+      syncArcsForCenter(s, id);
     }),
 
     updateCircleRadiusFromSolver: (id, radius) => set(s => {
@@ -450,6 +507,12 @@ export const useSketchStore = create<SketchStore>()(
 
     closeDimensionDialog: () => set(s => {
       s.dimensionDialog = { open: false, constraintId: null, value: '' };
+    }),
+
+    setUiScale: (scale) => set(s => { s.uiScale = scale; }),
+
+    setPendingConstraint: (c) => set(s => {
+      s.pendingConstraint = c ? { ...c, collectedIds: [] } : null;
     }),
 
     // ── History ───────────────────────────────────────────────────────────────

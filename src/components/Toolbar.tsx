@@ -152,28 +152,30 @@ export function Toolbar() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    display: 'flex', flexDirection: 'column', width: '72px',
+    display: 'flex', flexDirection: 'column', minWidth: '72px',
     background: '#252526', borderRight: '1px solid #3a3a3a',
     padding: '4px 0', overflowY: 'auto', flexShrink: 0,
   },
   section: { display: 'flex', flexDirection: 'column', padding: '2px 4px', gap: '2px' },
   divider: { height: '1px', background: '#3a3a3a', margin: '4px 8px' },
   btn: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center',
-    padding: '5px 2px', borderRadius: '4px', background: 'transparent',
-    color: '#ccc', fontSize: '11px', gap: '2px', cursor: 'pointer', border: 'none',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%',
+    padding: '6px 4px', borderRadius: '4px', background: 'transparent',
+    color: '#ccc', fontSize: '12px', gap: '2px', cursor: 'pointer', border: 'none',
+    boxSizing: 'border-box' as const,
   },
   btnActive: { background: '#0e639c', color: '#fff' },
-  icon: { fontSize: '16px', lineHeight: 1 },
-  label: { fontSize: '9px', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', maxWidth: '64px', textOverflow: 'ellipsis' },
-  shortcut: { fontSize: '8px', opacity: 0.5, fontFamily: 'monospace' },
+  icon: { fontSize: '18px', lineHeight: 1 },
+  label: { fontSize: '10px', opacity: 0.85, whiteSpace: 'nowrap' },
+  shortcut: { fontSize: '9px', opacity: 0.45, fontFamily: 'monospace' },
   subBtns: {
-    display: 'flex', flexDirection: 'column', gap: '2px',
-    padding: '2px 0 2px 6px', borderLeft: '2px solid #0e639c', marginLeft: '10px',
+    display: 'flex', flexDirection: 'column', gap: '3px',
+    padding: '3px 4px', borderLeft: '2px solid #0e639c', marginLeft: '8px', marginRight: '4px',
   },
   subBtn: {
-    padding: '2px 4px', borderRadius: '3px', background: '#1e1e1e',
-    border: '1px solid #444', color: '#aaa', fontSize: '9px', cursor: 'pointer', textAlign: 'left' as const,
+    padding: '3px 7px', borderRadius: '3px', background: '#1e1e1e',
+    border: '1px solid #444', color: '#aaa', fontSize: '10px', cursor: 'pointer',
+    textAlign: 'left' as const, whiteSpace: 'nowrap',
   },
   subBtnActive: { background: '#0e639c', color: '#fff', borderColor: '#0e639c' },
 };

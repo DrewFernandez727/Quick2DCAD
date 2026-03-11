@@ -38,6 +38,8 @@ export interface ArcEntity {
   startAngle: number; // radians
   endAngle: number;   // radians
   construction: boolean;
+  startPtId?: EntityId; // point entity at arc start
+  endPtId?: EntityId;   // point entity at arc end
 }
 
 export interface RectEntity {

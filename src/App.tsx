@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useSketchStore } from './state/sketchStore';
 import { SketchCanvas } from './canvas/SketchCanvas';
 import { Toolbar } from './components/Toolbar';
 import { ConstraintBar } from './components/ConstraintBar';
@@ -8,10 +9,11 @@ import { StatusBar } from './components/StatusBar';
 import { SnapOptionsPanel } from './components/SnapOptions';
 import { DimensionDialog } from './components/DimensionDialog';
 import { initSolver } from './solver/ConstraintSolver';
-import { useSketchStore } from './state/sketchStore';
 import { screenToWorld } from './canvas/renderer';
 
 export default function App() {
+  const uiScale = useSketchStore(s => s.uiScale);
+
   // Initialise solver on mount
   useEffect(() => {
     initSolver().catch(console.error);
@@ -36,16 +38,18 @@ export default function App() {
 
       {/* Main body */}
       <div style={layoutStyles.body}>
-        {/* Left toolbar */}
-        <Toolbar />
+        {/* Left toolbar — scaled */}
+        <div style={{ zoom: uiScale, flexShrink: 0, display: 'flex' }}>
+          <Toolbar />
+        </div>
 
-        {/* Canvas area */}
+        {/* Canvas area — never scaled so coordinate mapping stays correct */}
         <div style={layoutStyles.canvasArea}>
           <SketchCanvas />
         </div>
 
-        {/* Right panel: snap options + constraints + properties */}
-        <div style={layoutStyles.rightPanel}>
+        {/* Right panel — scaled */}
+        <div style={{ zoom: uiScale, display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
           <SnapOptionsPanel />
           <ConstraintBar />
           <PropertiesPanel />
@@ -53,8 +57,10 @@ export default function App() {
         </div>
       </div>
 
-      {/* Status bar */}
-      <StatusBar />
+      {/* Status bar — scaled */}
+      <div style={{ zoom: uiScale }}>
+        <StatusBar />
+      </div>
 
       {/* Dimension input dialog (modal) */}
       <DimensionDialog />
