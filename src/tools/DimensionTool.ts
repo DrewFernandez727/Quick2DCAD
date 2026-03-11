@@ -7,6 +7,7 @@ import { RenderState } from '../canvas/renderer';
 import { useSketchStore } from '../state/sketchStore';
 import { hitTestAll } from '../canvas/hitTest';
 import { dist } from '../geometry/mathUtils';
+import { formatLength, formatAngle } from '../geometry/units';
 
 export type DimMode = 'smart' | 'linear' | 'horizontal' | 'vertical' | 'angle' | 'radius' | 'diameter';
 
@@ -278,8 +279,9 @@ export class DimensionTool implements Tool {
     if (this.phase === 'place' && this.resolvedType && this.resolvedIds.length && this.mouse) {
       // Live measured value for the label
       const val = measureValue(this.resolvedType, this.resolvedIds, store.entities);
+      const units = store.units;
       const labelText = val !== null
-        ? (this.resolvedType === 'angle' ? `${val.toFixed(1)}°` : `${val.toFixed(2)}`)
+        ? (this.resolvedType === 'angle' ? formatAngle(val) : formatLength(val, units))
         : '';
 
       return {

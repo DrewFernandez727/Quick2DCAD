@@ -7,6 +7,7 @@ import {
 } from '../geometry/types';
 import { newId } from '../geometry/idGen';
 import { SnapOptions, DEFAULT_SNAP_OPTIONS } from '../geometry/snap';
+import { UnitSystem } from '../geometry/units';
 
 // ─── History ──────────────────────────────────────────────────────────────────
 const MAX_HISTORY = 100;
@@ -50,6 +51,10 @@ export interface SketchStore {
   // UI scale
   uiScale: number;
   setUiScale(s: number): void;
+
+  // Units
+  units: UnitSystem;
+  setUnits(u: UnitSystem): void;
 
   // Pending constraint pick mode
   pendingConstraint: { type: ConstraintType; minEntities: number; collectedIds: EntityId[] } | null;
@@ -112,6 +117,7 @@ export interface SketchStore {
   updateEntityFromSolver(id: EntityId, x: number, y: number): void;
   updateCircleRadiusFromSolver(id: EntityId, radius: number): void;
   updateDimensionConstraintValue(id: ConstraintId, value: number): void;
+  toggleConstraintDriving(id: ConstraintId): void;
 
   // Dimension dialog
   openDimensionDialog(constraintId: ConstraintId | null, initialValue?: number): void;
@@ -196,6 +202,7 @@ export const useSketchStore = create<SketchStore>()(
     cursorPos: { x: 0, y: 0 },
     dimensionDialog: { open: false, constraintId: null, value: '' },
     uiScale: 1.0,
+    units: 'mm' as UnitSystem,
     pendingConstraint: null,
     _history: [],
     _historyIndex: -1,
@@ -556,6 +563,11 @@ export const useSketchStore = create<SketchStore>()(
       if (c) c.value = value;
     }),
 
+    toggleConstraintDriving: (id) => set(s => {
+      const c = s.constraints[id];
+      if (c) c.driving = !c.driving;
+    }),
+
     // ── Dimension dialog ──────────────────────────────────────────────────────
     openDimensionDialog: (constraintId, initialValue) => set(s => {
       s.dimensionDialog = {
@@ -570,6 +582,7 @@ export const useSketchStore = create<SketchStore>()(
     }),
 
     setUiScale: (scale) => set(s => { s.uiScale = scale; }),
+    setUnits: (u) => set(s => { s.units = u; }),
 
     setPendingConstraint: (c) => set(s => {
       s.pendingConstraint = c ? { ...c, collectedIds: [] } : null;

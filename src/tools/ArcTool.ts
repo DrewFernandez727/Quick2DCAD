@@ -3,6 +3,7 @@ import { Vec2, EntityId, SnapResult, Entity } from '../geometry/types';
 import { RenderState } from '../canvas/renderer';
 import { useSketchStore } from '../state/sketchStore';
 import { dist, midpoint, lineLineIntersection } from '../geometry/mathUtils';
+import { formatLength } from '../geometry/units';
 
 // ─── 3-point circumcircle ─────────────────────────────────────────────────────
 function circumcircle(p1: Vec2, p2: Vec2, p3: Vec2): { cx: number; cy: number; r: number } | null {
@@ -122,6 +123,7 @@ export class ArcTool implements Tool {
   getOverlay(): Partial<RenderState> {
     if (!this.currentPt || this.phase === 0) return {};
     const mode = this.mode;
+    const u = useSketchStore.getState().units;
     const previewEntities: Entity[] = [];
     const previewPoints: Vec2[] = [...this.pts];
     let liveLabel: { worldPos: Vec2; text: string } | undefined;
@@ -133,7 +135,7 @@ export class ArcTool implements Tool {
         const r = dist(center, this.currentPt);
         if (r > 0.001) {
           previewEntities.push({ id: '__arc_ci', type: 'circle', centerId: '__arc_c', radius: r, construction: false });
-          liveLabel = { worldPos: this.currentPt, text: `R ${r.toFixed(2)}mm` };
+          liveLabel = { worldPos: this.currentPt, text: `R ${formatLength(r, u)}` };
         }
       } else {
         const r = dist(center, this.pts[1]);
@@ -141,7 +143,7 @@ export class ArcTool implements Tool {
         const ea = Math.atan2(this.currentPt.y - center.y, this.currentPt.x - center.x);
         previewEntities.push({ id: '__arc_a', type: 'arc', centerId: '__arc_c', radius: r, startAngle: sa, endAngle: ea, construction: false });
         let sweep = (ea - sa) * 180 / Math.PI; if (sweep <= 0) sweep += 360;
-        liveLabel = { worldPos: this.currentPt, text: `R ${r.toFixed(2)}mm  Δ${sweep.toFixed(1)}°` };
+        liveLabel = { worldPos: this.currentPt, text: `R ${formatLength(r, u)}  Δ${sweep.toFixed(1)}°` };
       }
       previewEntities.push(cEnt);
     } else if (mode === 1) {
@@ -159,7 +161,7 @@ export class ArcTool implements Tool {
           const ea = Math.atan2(this.currentPt.y - cc.cy, this.currentPt.x - cc.cx);
           previewEntities.push(cEnt, { id: '__arc_a', type: 'arc', centerId: '__arc_c', radius: cc.r, startAngle: sa, endAngle: ea, construction: false });
           let sweep = (ea - sa) * 180 / Math.PI; if (sweep <= 0) sweep += 360;
-          liveLabel = { worldPos: this.currentPt, text: `R ${cc.r.toFixed(2)}mm  Δ${sweep.toFixed(1)}°` };
+          liveLabel = { worldPos: this.currentPt, text: `R ${formatLength(cc.r, u)}  Δ${sweep.toFixed(1)}°` };
         }
       }
     } else {
@@ -169,7 +171,7 @@ export class ArcTool implements Tool {
         previewEntities.push({ id: '__arc_p1', type: 'point', x: start.x, y: start.y, construction: false });
         previewEntities.push({ id: '__arc_p2', type: 'point', x: this.currentPt.x, y: this.currentPt.y, construction: false });
         previewEntities.push({ id: '__arc_l', type: 'line', p1Id: '__arc_p1', p2Id: '__arc_p2', construction: false });
-        liveLabel = { worldPos: this.currentPt, text: `R ${r.toFixed(2)}mm` };
+        liveLabel = { worldPos: this.currentPt, text: `R ${formatLength(r, u)}` };
       } else {
         const [start, center] = this.pts;
         const r = dist(center, start);
@@ -178,7 +180,7 @@ export class ArcTool implements Tool {
         const ea = Math.atan2(this.currentPt.y - center.y, this.currentPt.x - center.x);
         previewEntities.push(cEnt, { id: '__arc_a', type: 'arc', centerId: '__arc_c', radius: r, startAngle: sa, endAngle: ea, construction: false });
         let sweep = (ea - sa) * 180 / Math.PI; if (sweep <= 0) sweep += 360;
-        liveLabel = { worldPos: this.currentPt, text: `R ${r.toFixed(2)}mm  Δ${sweep.toFixed(1)}°` };
+        liveLabel = { worldPos: this.currentPt, text: `R ${formatLength(r, u)}  Δ${sweep.toFixed(1)}°` };
       }
     }
 

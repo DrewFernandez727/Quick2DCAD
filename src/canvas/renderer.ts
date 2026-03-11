@@ -4,9 +4,10 @@ import {
   PointEntity, LineEntity, CircleEntity, ArcEntity
 } from '../geometry/types';
 import { dist, midpoint, circlePoint, normalizeAngle, angleInArc } from '../geometry/mathUtils';
+import { UnitSystem, formatLength, formatAngle, toDisplay } from '../geometry/units';
 
 // ─── Color palette ────────────────────────────────────────────────────────────
-const C = {
+const C: Record<string, string> = {
   bg: '#1e1e1e',
   grid: '#2a2a2a',
   gridMajor: '#333',
@@ -21,6 +22,7 @@ const C = {
   pointSelected: '#00ccff',
   preview: 'rgba(180,180,255,0.5)',
   dim: '#f5c842',
+  dimDriven: '#888888',
   dimText: '#f5c842',
   constraintIcon: '#888',
   snap: '#00ffcc',
@@ -71,6 +73,7 @@ export interface RenderState {
   snapResult: SnapResult | null;
   gridSize: number;
   showGrid: boolean;
+  units?: UnitSystem;
   // Tool preview
   previewPoints?: Vec2[];
   previewEntities?: Entity[];
@@ -95,7 +98,7 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState) {
   if (state.showGrid) drawGrid(ctx, vp, w, h, state.gridSize);
   drawEntities(ctx, entities, constraints, selectedIds, overconstrained, state.highlightIds, vp, w, h);
   drawConstraintIcons(ctx, entities, constraints, overconstrained, vp, w, h);
-  drawDimensions(ctx, entities, constraints, overconstrained, vp, w, h);
+  drawDimensions(ctx, entities, constraints, overconstrained, vp, w, h, state.units ?? 'mm');
   if (state.dimPreview) drawDimPreview(ctx, state.dimPreview, entities, vp, w, h);
   if (state.previewEntities) drawPreviewEntities(ctx, state.previewEntities, entities, vp, w, h);
   if (state.previewPoints) drawPreviewPoints(ctx, state.previewPoints, vp, w, h);
@@ -675,12 +678,20 @@ function drawAngleDimAnnotation(
   ctx.restore();
 }
 
-function formatDimLabel(c: SketchConstraint): string {
+function formatDimLabel(c: SketchConstraint, units: UnitSystem = 'mm'): string {
   if (c.value === undefined) return '';
-  if (c.type === 'angle') return `${c.value.toFixed(1)}°`;
-  if (c.type === 'diameter') return `⌀${c.value.toFixed(2)}`;
-  if (c.type === 'radius') return `R${c.value.toFixed(2)}`;
-  return c.value.toFixed(2);
+  let text: string;
+  if (c.type === 'angle') {
+    text = formatAngle(c.value);
+  } else if (c.type === 'diameter') {
+    text = `⌀${formatLength(c.value, units)}`;
+  } else if (c.type === 'radius') {
+    text = `R${formatLength(c.value, units)}`;
+  } else {
+    text = formatLength(c.value, units);
+  }
+  // Driven/reference dimensions shown in parentheses
+  return c.driving ? text : `(${text})`;
 }
 
 function dispatchDimAnnotation(
@@ -732,15 +743,18 @@ function drawDimensions(
   constraints: Record<ConstraintId, SketchConstraint>,
   overconstrained: Set<ConstraintId>,
   vp: Viewport, w: number, h: number,
+  units: UnitSystem = 'mm',
 ) {
   ctx.font = 'bold 11px monospace';
   for (const c of Object.values(constraints)) {
     if (!DIM_TYPES.includes(c.type) || c.value === undefined) continue;
     const isOC = overconstrained.has(c.id);
+    const isDriven = !c.driving;
+    const color = isOC ? C.overConstrained : isDriven ? C.dimDriven : C.dim;
     dispatchDimAnnotation(
       ctx, c.type as any, c.entityIds,
-      formatDimLabel(c), c.labelPos, entities, vp, w, h,
-      isOC ? C.overConstrained : C.dim,
+      formatDimLabel(c, units), c.labelPos, entities, vp, w, h,
+      color,
     );
   }
 }

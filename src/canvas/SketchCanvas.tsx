@@ -98,6 +98,7 @@ export function SketchCanvas() {
       snapResult: store.snapResult,
       gridSize: store.gridSize,
       showGrid: store.showGrid && store.snapOptions.grid,
+      units: store.units,
       previewPoints: overlay.previewPoints,
       previewEntities: overlay.previewEntities ?? [],
       selectionBox: overlay.selectionBox ?? null,
@@ -230,7 +231,7 @@ export function SketchCanvas() {
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     const rect = canvasRef.current!.getBoundingClientRect();
-    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const factor = e.deltaY < 0 ? 1.4 : 1 / 1.4;
     const canvas = canvasRef.current!;
     useSketchStore.getState().zoomAt(
       factor,

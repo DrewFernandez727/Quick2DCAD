@@ -4,6 +4,7 @@ import { RenderState } from '../canvas/renderer';
 import { useSketchStore } from '../state/sketchStore';
 import { dist } from '../geometry/mathUtils';
 import { autoConstrainPoint } from './autoConstraint';
+import { formatLength } from '../geometry/units';
 
 export class CircleTool implements Tool {
   name = 'circle';
@@ -67,7 +68,7 @@ export class CircleTool implements Tool {
     return {
       previewEntities: [previewCenter, previewCircle],
       previewPoints: [this.centerPt],
-      liveLabel: { worldPos: this.currentPt, text: `R ${radius.toFixed(2)}mm  ⌀${(radius * 2).toFixed(2)}mm` },
+      liveLabel: { worldPos: this.currentPt, text: `R ${formatLength(radius, useSketchStore.getState().units)}  ⌀${formatLength(radius * 2, useSketchStore.getState().units)}` },
     };
   }
 }

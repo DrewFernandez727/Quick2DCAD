@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSketchStore } from '../state/sketchStore';
 import { SettingsPanel } from './SettingsPanel';
+import { toDisplay, UNIT_LABELS } from '../geometry/units';
 
 export function StatusBar() {
   const cursorPos = useSketchStore(s => s.cursorPos);
@@ -12,6 +13,7 @@ export function StatusBar() {
   const constraints = useSketchStore(s => s.constraints);
   const orthoActive = useSketchStore(s => s.orthoActive);
   const pendingConstraint = useSketchStore(s => s.pendingConstraint);
+  const units = useSketchStore(s => s.units);
 
   const [showSettings, setShowSettings] = useState(false);
 
@@ -41,8 +43,8 @@ export function StatusBar() {
         <span style={styles.label}>Tool:</span> {activeTool}
       </span>
       <span style={styles.sep}>|</span>
-      <span style={styles.item} title="Cursor position (mm)">
-        X: <b>{cursorPos.x.toFixed(2)}</b>  Y: <b>{cursorPos.y.toFixed(2)}</b>
+      <span style={styles.item} title={`Cursor position (${UNIT_LABELS[units]})`}>
+        X: <b>{toDisplay(cursorPos.x, units).toFixed(units === 'm' ? 4 : units === 'ft' ? 4 : 2)}</b>  Y: <b>{toDisplay(cursorPos.y, units).toFixed(units === 'm' ? 4 : units === 'ft' ? 4 : 2)}</b> <span style={{ color: '#666' }}>{UNIT_LABELS[units]}</span>
       </span>
       {snapLabel && (
         <>
