@@ -3,6 +3,7 @@
  * All units are mm and mm².
  */
 import { Entity, EntityId, LineEntity, CircleEntity, ArcEntity, PointEntity, Vec2 } from './types';
+import { dist } from './mathUtils';
 
 export interface ShapeResult {
   id: string;           // unique key for React list
@@ -11,8 +12,8 @@ export interface ShapeResult {
   area: number;         // mm²
   perimeter: number;    // mm
   centroid: Vec2;       // mm
-  ixx: number | null;   // mm⁴ — second moment about centroidal horizontal axis
-  iyy: number | null;   // mm⁴ — second moment about centroidal vertical axis
+  ixx: number;          // mm⁴ — second moment about centroidal horizontal axis
+  iyy: number;          // mm⁴ — second moment about centroidal vertical axis
   // circle/arc extras
   radius?: number;
   sweepDeg?: number;
@@ -64,11 +65,7 @@ function polygonMomentsAboutOrigin(pts: Vec2[]): { ix: number; iy: number } {
 function polygonPerimeter(pts: Vec2[]): number {
   let p = 0;
   const n = pts.length;
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    const dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y;
-    p += Math.sqrt(dx * dx + dy * dy);
-  }
+  for (let i = 0; i < n; i++) p += dist(pts[i], pts[(i + 1) % n]);
   return p;
 }
 
@@ -151,12 +148,12 @@ export function analyzeShapes(entities: Record<EntityId, Entity>): ShapeResult[]
 
     // Ensure CCW winding for correct centroid/moment sign
     const orderedPts = signedArea < 0 ? [...pts].reverse() : pts;
-    const centroid = polygonCentroid(orderedPts, Math.abs(shoelaceArea(orderedPts)));
+    const centroid = polygonCentroid(orderedPts, area);
     const { ix, iy } = polygonMomentsAboutOrigin(orderedPts);
 
-    // Parallel axis theorem: centroidal moments
-    const ixx = Math.abs(ix) - area * centroid.y * centroid.y;
-    const iyy = Math.abs(iy) - area * centroid.x * centroid.x;
+    // Parallel axis theorem: shift from origin to centroidal axes
+    const ixx = ix - area * centroid.y * centroid.y;
+    const iyy = iy - area * centroid.x * centroid.x;
     const perimeter = polygonPerimeter(pts);
 
     results.push({
@@ -171,82 +168,79 @@ export function analyzeShapes(entities: Record<EntityId, Entity>): ShapeResult[]
     });
   });
 
-  // ── Circles ──────────────────────────────────────────────────────────────
+  // ── Circles + Arcs — single pass ────────────────────────────────────────
   let circleIdx = 0;
-  for (const e of Object.values(entities)) {
-    if (e.type !== 'circle' || e.construction) continue;
-    const circ = e as CircleEntity;
-    const center = entities[circ.centerId] as PointEntity | undefined;
-    if (!center) continue;
-    const r = circ.radius;
-    const area = Math.PI * r * r;
-    const ixx = (Math.PI * r * r * r * r) / 4;
-
-    results.push({
-      id: `circ-${circleIdx++}`,
-      label: `Circle`,
-      type: 'circle',
-      area,
-      perimeter: 2 * Math.PI * r,
-      centroid: { x: center.x, y: center.y },
-      ixx,
-      iyy: ixx, // I_xx = I_yy for circle
-      radius: r,
-    });
-  }
-
-  // ── Arcs (sector area + arc length) ─────────────────────────────────────
   let arcIdx = 0;
   for (const e of Object.values(entities)) {
-    if (e.type !== 'arc' || e.construction) continue;
-    const arc = e as ArcEntity;
-    const center = entities[arc.centerId] as PointEntity | undefined;
-    if (!center) continue;
-    const r = arc.radius;
-    let sweep = arc.endAngle - arc.startAngle;
-    if (sweep <= 0) sweep += 2 * Math.PI;
-    const midAngle = arc.startAngle + sweep / 2;
-    const half = sweep / 2;
+    if (e.construction) continue;
 
-    // Sector centroid: distance = (2r/3) * sin(half) / half from center
-    const dCent = half > 1e-6 ? (2 * r / 3) * Math.sin(half) / half : 0;
-    const centroid: Vec2 = {
-      x: center.x + dCent * Math.cos(midAngle),
-      y: center.y + dCent * Math.sin(midAngle),
-    };
+    if (e.type === 'circle') {
+      const circ = e as CircleEntity;
+      const center = entities[circ.centerId] as PointEntity | undefined;
+      if (!center) continue;
+      const r = circ.radius;
+      const area = Math.PI * r * r;
+      const ixx = (Math.PI * r * r * r * r) / 4;
+      results.push({
+        id: `circ-${circleIdx++}`,
+        label: `Circle`,
+        type: 'circle',
+        area,
+        perimeter: 2 * Math.PI * r,
+        centroid: { x: center.x, y: center.y },
+        ixx,
+        iyy: ixx, // I_xx = I_yy for circle
+        radius: r,
+      });
+      continue;
+    }
 
-    // Sector area
-    const area = 0.5 * r * r * sweep;
-    const arcLength = r * sweep;
+    if (e.type === 'arc') {
+      const arc = e as ArcEntity;
+      const center = entities[arc.centerId] as PointEntity | undefined;
+      if (!center) continue;
+      const r = arc.radius;
+      let sweep = arc.endAngle - arc.startAngle;
+      if (sweep <= 0) sweep += 2 * Math.PI;
+      const midAngle = arc.startAngle + sweep / 2;
+      const half = sweep / 2;
 
-    // Sector I about centroidal axes (via moments about circle center then parallel axis)
-    // I_perp (about axis ⊥ to bisector, through circle center) = r⁴/8*(sweep - sin(sweep))
-    // I_parallel (about bisector axis, through circle center) = r⁴/8*(sweep + sin(sweep))
-    // Rotate to world x/y using mid-angle
-    const iPerp = (r * r * r * r / 8) * (sweep - Math.sin(sweep));
-    const iPara = (r * r * r * r / 8) * (sweep + Math.sin(sweep));
-    const cos2 = Math.cos(midAngle) * Math.cos(midAngle);
-    const sin2 = 1 - cos2;
-    const iXcenter = iPara * sin2 + iPerp * cos2;
-    const iYcenter = iPara * cos2 + iPerp * sin2;
-    // Parallel axis to centroid
-    const dx = dCent * Math.cos(midAngle);
-    const dy = dCent * Math.sin(midAngle);
-    const ixx = iXcenter - area * dy * dy;
-    const iyy = iYcenter - area * dx * dx;
+      // Sector centroid: distance = (2r/3) * sin(half) / half from center
+      const dCent = half > 1e-6 ? (2 * r / 3) * Math.sin(half) / half : 0;
+      const centroid: Vec2 = {
+        x: center.x + dCent * Math.cos(midAngle),
+        y: center.y + dCent * Math.sin(midAngle),
+      };
 
-    results.push({
-      id: `arc-${arcIdx++}`,
-      label: `Arc sector`,
-      type: 'arc',
-      area,
-      perimeter: arcLength,
-      centroid,
-      ixx: Math.abs(ixx),
-      iyy: Math.abs(iyy),
-      radius: r,
-      sweepDeg: sweep * 180 / Math.PI,
-    });
+      const area = 0.5 * r * r * sweep;
+      const arcLength = r * sweep;
+
+      // Sector I about centroidal axes (via moments about circle center then parallel axis)
+      // I_perp (about axis ⊥ to bisector) = r⁴/8*(sweep - sin(sweep))
+      // I_para (about bisector axis)       = r⁴/8*(sweep + sin(sweep))
+      const r4o8 = r * r * r * r / 8;
+      const iPerp = r4o8 * (sweep - Math.sin(sweep));
+      const iPara = r4o8 * (sweep + Math.sin(sweep));
+      const cos2 = Math.cos(midAngle) * Math.cos(midAngle);
+      const sin2 = 1 - cos2;
+      const iXcenter = iPara * sin2 + iPerp * cos2;
+      const iYcenter = iPara * cos2 + iPerp * sin2;
+      const dx = dCent * Math.cos(midAngle);
+      const dy = dCent * Math.sin(midAngle);
+
+      results.push({
+        id: `arc-${arcIdx++}`,
+        label: `Arc sector`,
+        type: 'arc',
+        area,
+        perimeter: arcLength,
+        centroid,
+        ixx: Math.abs(iXcenter - area * dy * dy),
+        iyy: Math.abs(iYcenter - area * dx * dx),
+        radius: r,
+        sweepDeg: sweep * 180 / Math.PI,
+      });
+    }
   }
 
   return results;
@@ -262,8 +256,8 @@ export function totalProperties(shapes: ShapeResult[]): {
   for (const s of shapes) {
     totalArea += s.area;
     // Parallel axis back to origin for combined Ixx/Iyy
-    if (s.ixx !== null) ixxO += s.ixx + s.area * s.centroid.y * s.centroid.y;
-    if (s.iyy !== null) iyyO += s.iyy + s.area * s.centroid.x * s.centroid.x;
+    ixxO += s.ixx + s.area * s.centroid.y * s.centroid.y;
+    iyyO += s.iyy + s.area * s.centroid.x * s.centroid.x;
   }
   return { totalArea, ixxOrigin: ixxO, iyyOrigin: iyyO };
 }

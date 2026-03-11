@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSketchStore } from '../state/sketchStore';
 import { analyzeShapes, totalProperties, ShapeResult } from '../geometry/shapeAnalysis';
 
@@ -31,8 +31,8 @@ function ShapeCard({ shape }: { shape: ShapeResult }) {
       <Row label="Centroid Y" value={`${fmt(shape.centroid.y)} mm`} />
       <div style={styles.divider} />
       <div style={styles.momentTitle}>Centroidal axes</div>
-      <Row label="I_xx" value={shape.ixx !== null ? `${fmt(shape.ixx)} mm⁴` : '—'} />
-      <Row label="I_yy" value={shape.iyy !== null ? `${fmt(shape.iyy)} mm⁴` : '—'} />
+      <Row label="I_xx" value={`${fmt(shape.ixx)} mm⁴`} />
+      <Row label="I_yy" value={`${fmt(shape.iyy)} mm⁴`} />
     </div>
   );
 }
@@ -50,7 +50,7 @@ export function InspectPanel() {
   const entities = useSketchStore(s => s.entities);
   const [open, setOpen] = useState(true);
 
-  const shapes = analyzeShapes(entities);
+  const shapes = useMemo(() => analyzeShapes(entities), [entities]);
   const totals = shapes.length > 1 ? totalProperties(shapes) : null;
 
   return (
