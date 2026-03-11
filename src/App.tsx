@@ -3,6 +3,7 @@ import { SketchCanvas } from './canvas/SketchCanvas';
 import { Toolbar } from './components/Toolbar';
 import { ConstraintBar } from './components/ConstraintBar';
 import { PropertiesPanel } from './components/PropertiesPanel';
+import { InspectPanel } from './components/InspectPanel';
 import { StatusBar } from './components/StatusBar';
 import { SnapOptionsPanel } from './components/SnapOptions';
 import { DimensionDialog } from './components/DimensionDialog';
@@ -48,6 +49,7 @@ export default function App() {
           <SnapOptionsPanel />
           <ConstraintBar />
           <PropertiesPanel />
+          <InspectPanel />
         </div>
       </div>
 

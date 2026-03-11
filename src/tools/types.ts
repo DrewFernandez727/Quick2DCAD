@@ -14,6 +14,8 @@ export interface Tool {
   onKeyDown(e: KeyboardEvent): void;
   cancel(): void;
   getCursor(): string;
-  /** Overlay state for the renderer (preview geometry, selection box, etc.) */
+  /** Overlay state for the renderer (preview geometry, selection box, live label, etc.) */
   getOverlay(): Partial<RenderState>;
+  /** Returns the anchor point for ortho lock (last placed point). */
+  getAnchor?(): Vec2 | null;
 }

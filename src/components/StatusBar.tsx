@@ -9,6 +9,7 @@ export function StatusBar() {
   const entities = useSketchStore(s => s.entities);
   const constraints = useSketchStore(s => s.constraints);
   const solveStatus = useSketchStore(s => s.solveStatus);
+  const orthoActive = useSketchStore(s => s.orthoActive);
 
   const entityCount = Object.keys(entities).length;
   const constraintCount = Object.keys(constraints).length;
@@ -26,6 +27,7 @@ export function StatusBar() {
     polygon: 'Click center • Click radius (press 3-9 to change sides)',
     point: 'Click to place point',
     construction: 'Select entities to toggle construction geometry',
+    trim: 'Hover over a line segment between intersections • Click to trim • Esc to cancel',
   };
 
   return (
@@ -55,6 +57,14 @@ export function StatusBar() {
           <span style={{ ...styles.item, color: '#00ccff' }}>Selected: {selectedCount}</span>
         </>
       )}
+      {orthoActive && (
+        <>
+          <span style={styles.sep}>|</span>
+          <span style={{ ...styles.item, color: '#ffd700', fontWeight: 'bold' }}>ORTHO</span>
+        </>
+      )}
+      <span style={styles.sep}>|</span>
+      <span style={{ ...styles.item, color: '#555', fontSize: '10px' }} title="Hold Alt while drawing to disable auto-constraints">AUTO</span>
       <span style={{ flex: 1 }} />
       <span style={{ ...styles.item, fontSize: '10px', color: '#555', maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {TOOL_HINTS[activeTool]}
