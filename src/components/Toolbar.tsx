@@ -74,7 +74,12 @@ export function Toolbar() {
         {TOOLS.map(t => (
           <div key={t.name}>
             <button
-              onClick={() => setActiveTool(t.name)}
+              onClick={() => {
+                // Cancel current tool state and clear any pending constraint before switching
+                (window as any).__cancelActiveTool?.();
+                useSketchStore.getState().setPendingConstraint(null);
+                setActiveTool(t.name);
+              }}
               style={{ ...styles.btn, ...(activeTool === t.name ? styles.btnActive : {}) }}
               title={`${t.label} (${t.shortcut})`}
             >

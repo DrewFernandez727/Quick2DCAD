@@ -104,7 +104,7 @@ export class LineTool implements Tool {
     const willBeV = Math.abs(Math.abs(angle) - Math.PI / 2) < THRESH;
     const hint = willBeV ? '  → V' : willBeH ? '  → H' : '';
     return {
-      previewEntities: [previewLine],
+      previewEntities: [previewP1, previewP2, previewLine],
       previewPoints: [this.startPt, this.currentPt],
       liveLabel: { worldPos: this.currentPt, text: `${d.toFixed(2)}mm  ${angleDeg.toFixed(1)}°${hint}` },
     };

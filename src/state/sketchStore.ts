@@ -157,6 +157,23 @@ function syncArcsForCenter(s: { entities: Record<EntityId, Entity> }, pointId: E
   }
 }
 
+// When an arc endpoint (startPtId/endPtId) is dragged, update the arc's angle to match
+function syncArcFromEndpoint(s: { entities: Record<EntityId, Entity> }, ptId: EntityId): void {
+  const pt = s.entities[ptId] as PointEntity | undefined;
+  if (!pt || pt.type !== 'point') return;
+  for (const e of Object.values(s.entities)) {
+    if (e.type !== 'arc') continue;
+    const arc = e as ArcEntity;
+    const center = s.entities[arc.centerId] as PointEntity | undefined;
+    if (!center) continue;
+    if (arc.startPtId === ptId) {
+      arc.startAngle = Math.atan2(pt.y - center.y, pt.x - center.x);
+    } else if (arc.endPtId === ptId) {
+      arc.endAngle = Math.atan2(pt.y - center.y, pt.x - center.x);
+    }
+  }
+}
+
 // ─── Store implementation ────────────────────────────────────────────────────
 export const useSketchStore = create<SketchStore>()(
   immer((set, get) => ({
@@ -371,6 +388,24 @@ export const useSketchStore = create<SketchStore>()(
       if (midEndId && t1 < 1 - EPSILON) {
         addLine(midEndId, endId, line.construction);
       }
+
+      // Remove original endpoints that are now orphaned (no line references them)
+      set(s => {
+        const toDelete: EntityId[] = [];
+        for (const ptId of [startId, endId]) {
+          const stillUsed = Object.values(s.entities).some(
+            e => e.type === 'line' && ((e as LineEntity).p1Id === ptId || (e as LineEntity).p2Id === ptId)
+          );
+          if (!stillUsed && s.entities[ptId]) toDelete.push(ptId);
+        }
+        for (const id of toDelete) {
+          delete s.entities[id];
+          // Remove constraints referencing the orphaned point
+          for (const [cid, c] of Object.entries(s.constraints)) {
+            if (c.entityIds.includes(id)) delete s.constraints[cid];
+          }
+        }
+      });
     },
 
     convertCircleToArc: (circleId, startAngle, endAngle) => {
@@ -393,7 +428,8 @@ export const useSketchStore = create<SketchStore>()(
     movePoint: (id, x, y) => set(s => {
       const e = s.entities[id];
       if (e && e.type === 'point') { e.x = x; e.y = y; }
-      syncArcsForCenter(s, id);
+      syncArcFromEndpoint(s, id); // if dragging an arc endpoint, update arc angles
+      syncArcsForCenter(s, id);   // if dragging an arc center, sync its endpoints
     }),
 
     moveEntities: (ids, dx, dy) => set(s => {
@@ -410,9 +446,14 @@ export const useSketchStore = create<SketchStore>()(
         const p = s.entities[pid];
         if (p && p.type === 'point') { p.x += dx; p.y += dy; }
       }
-      // Sync arc endpoints after all points have moved
+      // For each moved point, update arc angles if it's an arc endpoint
+      for (const pid of pointIds) {
+        syncArcFromEndpoint(s, pid);
+      }
+      // Sync arc endpoints (position from angle) for arc centers that moved
       for (const id of ids) {
         if (s.entities[id]?.type === 'arc') syncArcEndpoints(s, id);
+        if (s.entities[id]?.type === 'point') syncArcsForCenter(s, id);
       }
     }),
 
@@ -469,7 +510,18 @@ export const useSketchStore = create<SketchStore>()(
     // ── Constraints ───────────────────────────────────────────────────────────
     addConstraint: (c) => {
       const id = newId('co');
-      set(s => { s.constraints[id] = { ...c, id }; });
+      set(s => {
+        // H/V constraints are mutually exclusive on the same entity
+        if (c.type === 'horizontal' || c.type === 'vertical') {
+          const opposite = c.type === 'horizontal' ? 'vertical' : 'horizontal';
+          for (const [cid, existing] of Object.entries(s.constraints)) {
+            if (existing.type === opposite && existing.entityIds.some(eid => c.entityIds.includes(eid))) {
+              delete s.constraints[cid];
+            }
+          }
+        }
+        s.constraints[id] = { ...c, id };
+      });
       return id;
     },
 

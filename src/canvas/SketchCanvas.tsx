@@ -50,12 +50,19 @@ export function SketchCanvas() {
 
   const store = useSketchStore();
 
-  // ─── Register global solve trigger ─────────────────────────────────────────
+  // ─── Register globals ────────────────────────────────────────────────────────
   useEffect(() => {
     (window as any).__triggerSolve = () => {
       try { solve(); } catch { solveSimple(); }
     };
-    return () => { delete (window as any).__triggerSolve; };
+    (window as any).__cancelActiveTool = () => {
+      const s = useSketchStore.getState();
+      tools[s.activeTool]?.cancel();
+    };
+    return () => {
+      delete (window as any).__triggerSolve;
+      delete (window as any).__cancelActiveTool;
+    };
   }, []);
 
   // ─── Render loop ─────────────────────────────────────────────────────────────
@@ -273,6 +280,7 @@ export function SketchCanvas() {
         const t = tools[store.activeTool];
         t?.cancel();
         store.clearSelection();
+        store.setActiveTool('select');
         return;
       }
 
@@ -284,6 +292,7 @@ export function SketchCanvas() {
       if (!e.ctrlKey && !e.metaKey && !e.altKey && toolKeys[e.key.toLowerCase()]) {
         const prev = tools[store.activeTool];
         prev?.cancel();
+        store.setPendingConstraint(null);
         store.setActiveTool(toolKeys[e.key.toLowerCase()] as any);
         return;
       }
