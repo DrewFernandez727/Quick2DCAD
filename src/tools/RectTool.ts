@@ -2,6 +2,7 @@ import { Tool } from './types';
 import { Vec2, SnapResult, Entity } from '../geometry/types';
 import { RenderState } from '../canvas/renderer';
 import { useSketchStore } from '../state/sketchStore';
+import { formatLength } from '../geometry/units';
 
 export class RectTool implements Tool {
   name = 'rect';
@@ -56,10 +57,10 @@ export class RectTool implements Tool {
       { id: '__rl3', type: 'line', p1Id: '__rp3', p2Id: '__rp4', construction: false },
       { id: '__rl4', type: 'line', p1Id: '__rp4', p2Id: '__rp1', construction: false },
     ];
-    const W = Math.abs(x2 - x1).toFixed(2), H = Math.abs(y2 - y1).toFixed(2);
+    const u = useSketchStore.getState().units;
     return {
       previewEntities: [p1, p2, p3, p4, ...lines],
-      liveLabel: { worldPos: this.currentPt, text: `${W} × ${H} mm` },
+      liveLabel: { worldPos: this.currentPt, text: `${formatLength(Math.abs(x2 - x1), u)} × ${formatLength(Math.abs(y2 - y1), u)}` },
     };
   }
 }

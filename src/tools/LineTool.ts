@@ -4,6 +4,7 @@ import { RenderState } from '../canvas/renderer';
 import { useSketchStore } from '../state/sketchStore';
 import { dist } from '../geometry/mathUtils';
 import { autoConstrainPoint, autoConstrainLineAngle } from './autoConstraint';
+import { formatLength } from '../geometry/units';
 
 export class LineTool implements Tool {
   name = 'line';
@@ -106,7 +107,7 @@ export class LineTool implements Tool {
     return {
       previewEntities: [previewP1, previewP2, previewLine],
       previewPoints: [this.startPt, this.currentPt],
-      liveLabel: { worldPos: this.currentPt, text: `${d.toFixed(2)}mm  ${angleDeg.toFixed(1)}°${hint}` },
+      liveLabel: { worldPos: this.currentPt, text: `${formatLength(d, useSketchStore.getState().units)}  ${angleDeg.toFixed(1)}°${hint}` },
     };
   }
 }

@@ -1,6 +1,7 @@
 import { useSketchStore } from '../state/sketchStore';
 import type { ConstraintType } from '../geometry/types';
 import { solve, solveSimple } from '../solver/ConstraintSolver';
+import { formatLength, formatAngle } from '../geometry/units';
 
 interface ConstraintDef {
   type: ConstraintType;
@@ -123,9 +124,19 @@ function ConstraintList() {
   const overconstrained = useSketchStore(s => s.overconstrained);
   const removeConstraint = useSketchStore(s => s.removeConstraint);
   const openDimensionDialog = useSketchStore(s => s.openDimensionDialog);
+  const toggleConstraintDriving = useSketchStore(s => s.toggleConstraintDriving);
+  const units = useSketchStore(s => s.units);
 
   const list = Object.values(constraints);
   if (list.length === 0) return null;
+
+  function dimValueLabel(c: (typeof list)[0]): string {
+    if (c.value === undefined) return '';
+    if (c.type === 'angle') return formatAngle(c.value);
+    if (c.type === 'diameter') return `⌀${formatLength(c.value, units)}`;
+    if (c.type === 'radius') return `R${formatLength(c.value, units)}`;
+    return formatLength(c.value, units);
+  }
 
   return (
     <div style={styles.listSection}>
@@ -141,13 +152,22 @@ function ConstraintList() {
             </span>
             <span style={styles.listType}>{c.type}</span>
             {c.value !== undefined && (
-              <button
-                style={styles.dimValue}
-                onClick={() => openDimensionDialog(c.id, c.value)}
-                title="Edit value"
-              >
-                {c.value.toFixed(2)}
-              </button>
+              <>
+                <button
+                  style={styles.dimValue}
+                  onClick={() => openDimensionDialog(c.id, c.value)}
+                  title="Edit dimension value"
+                >
+                  {c.driving ? dimValueLabel(c) : `(${dimValueLabel(c)})`}
+                </button>
+                <button
+                  style={{ ...styles.drivingBtn, ...(c.driving ? styles.drivingBtnOn : styles.drivingBtnOff) }}
+                  onClick={() => { useSketchStore.getState().pushHistory(); toggleConstraintDriving(c.id); try { solve(); } catch { solveSimple(); } }}
+                  title={c.driving ? 'Driving — click to make reference' : 'Reference — click to make driving'}
+                >
+                  {c.driving ? 'D' : 'R'}
+                </button>
+              </>
             )}
             <button
               style={styles.deleteBtn}
@@ -267,5 +287,22 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1,
     padding: '0 2px',
     flexShrink: 0,
+  },
+  drivingBtn: {
+    border: 'none',
+    borderRadius: '2px',
+    fontSize: '8px',
+    fontWeight: 700,
+    padding: '1px 3px',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+  drivingBtnOn: {
+    background: '#f5c842',
+    color: '#000',
+  },
+  drivingBtnOff: {
+    background: '#555',
+    color: '#aaa',
   },
 };

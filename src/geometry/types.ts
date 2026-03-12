@@ -129,7 +129,8 @@ export type ToolName =
   | 'polygon'
   | 'point'
   | 'construction'
-  | 'trim';
+  | 'trim'
+  | 'dim';
 
 // ─── Degree-of-freedom status (per entity/point) ─────────────────────────────
 export type DofStatus = 'free' | 'constrained' | 'over-constrained';
