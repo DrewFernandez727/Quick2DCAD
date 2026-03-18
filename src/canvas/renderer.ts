@@ -56,6 +56,17 @@ function sw(p: Vec2, vp: Viewport, w: number, h: number): Vec2 {
   return worldToScreen(p, vp, w, h);
 }
 
+// ─── Dimension label hit-box registry ────────────────────────────────────────
+// Updated each render frame; allows click-to-select on dimension annotations.
+const _dimLabelBoxes = new Map<ConstraintId, { cx: number; cy: number; hw: number; hh: number }>();
+
+export function queryDimLabelAt(sx: number, sy: number): ConstraintId | null {
+  for (const [id, box] of _dimLabelBoxes) {
+    if (Math.abs(sx - box.cx) <= box.hw && Math.abs(sy - box.cy) <= box.hh) return id;
+  }
+  return null;
+}
+
 // ─── Main render function ─────────────────────────────────────────────────────
 export interface DimPreview {
   type: 'distance' | 'horizontalDistance' | 'verticalDistance' | 'angle' | 'radius' | 'diameter';
@@ -74,6 +85,7 @@ export interface RenderState {
   gridSize: number;
   showGrid: boolean;
   units?: UnitSystem;
+  selectedConstraintId?: ConstraintId | null;
   // Tool preview
   previewPoints?: Vec2[];
   previewEntities?: Entity[];
@@ -98,7 +110,7 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState) {
   if (state.showGrid) drawGrid(ctx, vp, w, h, state.gridSize);
   drawEntities(ctx, entities, constraints, selectedIds, overconstrained, state.highlightIds, vp, w, h);
   drawConstraintIcons(ctx, entities, constraints, overconstrained, vp, w, h);
-  drawDimensions(ctx, entities, constraints, overconstrained, vp, w, h, state.units ?? 'mm');
+  drawDimensions(ctx, entities, constraints, overconstrained, vp, w, h, state.units ?? 'mm', state.selectedConstraintId ?? null);
   if (state.dimPreview) drawDimPreview(ctx, state.dimPreview, entities, vp, w, h);
   if (state.previewEntities) drawPreviewEntities(ctx, state.previewEntities, entities, vp, w, h);
   if (state.previewPoints) drawPreviewPoints(ctx, state.previewPoints, vp, w, h);
@@ -513,6 +525,10 @@ function drawArrowTip(
   ctx.fill();
 }
 
+// Set by drawDimensions before calling dispatchDimAnnotation for each constraint.
+let _recordDimId: ConstraintId | null = null;
+let _selectedDimId: ConstraintId | null = null;
+
 function drawDimLabelBox(
   ctx: CanvasRenderingContext2D,
   cx: number, cy: number,
@@ -522,9 +538,25 @@ function drawDimLabelBox(
   ctx.font = 'bold 11px monospace';
   const tw = ctx.measureText(text).width + 6;
   const th = 14;
-  ctx.fillStyle = 'rgba(25,25,25,0.9)';
+  const hw = tw / 2 + 2, hh = th / 2 + 2;
+
+  // Record for hit testing
+  if (_recordDimId) _dimLabelBoxes.set(_recordDimId, { cx, cy, hw, hh });
+
+  const isSelected = _recordDimId !== null && _recordDimId === _selectedDimId;
+
+  ctx.fillStyle = isSelected ? 'rgba(0,100,180,0.92)' : 'rgba(25,25,25,0.9)';
   ctx.fillRect(cx - tw / 2, cy - th / 2, tw, th);
-  ctx.fillStyle = color;
+
+  if (isSelected) {
+    ctx.save();
+    ctx.strokeStyle = '#00ccff';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(cx - tw / 2 - 1, cy - th / 2 - 1, tw + 2, th + 2);
+    ctx.restore();
+  }
+
+  ctx.fillStyle = isSelected ? '#ffffff' : color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, cx, cy);
@@ -744,18 +776,23 @@ function drawDimensions(
   overconstrained: Set<ConstraintId>,
   vp: Viewport, w: number, h: number,
   units: UnitSystem = 'mm',
+  selectedConstraintId: ConstraintId | null = null,
 ) {
+  _dimLabelBoxes.clear();
+  _selectedDimId = selectedConstraintId;
   ctx.font = 'bold 11px monospace';
   for (const c of Object.values(constraints)) {
     if (!DIM_TYPES.includes(c.type) || c.value === undefined) continue;
     const isOC = overconstrained.has(c.id);
     const isDriven = !c.driving;
     const color = isOC ? C.overConstrained : isDriven ? C.dimDriven : C.dim;
+    _recordDimId = c.id;
     dispatchDimAnnotation(
       ctx, c.type as any, c.entityIds,
       formatDimLabel(c, units), c.labelPos, entities, vp, w, h,
       color,
     );
+    _recordDimId = null;
   }
 }
 
