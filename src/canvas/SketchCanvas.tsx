@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useSketchStore } from '../state/sketchStore';
-import { render, screenToWorld, RenderState } from './renderer';
+import { render, screenToWorld, RenderState, queryDimLabelAt } from './renderer';
 import { computeSnap } from '../geometry/snap';
 import { solve, solveSimple } from '../solver/ConstraintSolver';
 import { SelectTool } from '../tools/SelectTool';
@@ -99,6 +99,7 @@ export function SketchCanvas() {
       gridSize: store.gridSize,
       showGrid: store.showGrid && store.snapOptions.grid,
       units: store.units,
+      selectedConstraintId: store.selectedConstraintId,
       previewPoints: overlay.previewPoints,
       previewEntities: overlay.previewEntities ?? [],
       selectionBox: overlay.selectionBox ?? null,
@@ -212,6 +213,17 @@ export function SketchCanvas() {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
+    // ── Dim label click-to-select (select tool only) ──────────────────────────
+    if (store.activeTool === 'select') {
+      const hitCid = queryDimLabelAt(sx, sy);
+      if (hitCid) {
+        store.selectConstraint(hitCid);
+        return;
+      }
+      // Clicked empty space (not a dim label) → clear constraint selection
+      store.selectConstraint(null);
+    }
+
     const activeTool = tools[store.activeTool];
     activeTool?.onMouseDown(world, e.nativeEvent, snap);
   }, [toWorldSnap]);
@@ -240,6 +252,20 @@ export function SketchCanvas() {
       canvas.width,
       canvas.height
     );
+  }, []);
+
+  const onDoubleClick = useCallback((e: React.MouseEvent) => {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const hitCid = queryDimLabelAt(sx, sy);
+    if (hitCid) {
+      const s = useSketchStore.getState();
+      const c = s.constraints[hitCid];
+      if (c?.value !== undefined) {
+        s.openDimensionDialog(hitCid, c.value);
+      }
+    }
   }, []);
 
   const onContextMenu = useCallback((e: React.MouseEvent) => {
@@ -302,10 +328,23 @@ export function SketchCanvas() {
         return;
       }
 
-      // Delete
+      // Delete — remove selected constraint or selected entities
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (store.selectedConstraintId) {
+          store.pushHistory();
+          store.removeConstraint(store.selectedConstraintId);
+          store.selectConstraint(null);
+          return;
+        }
         const t = tools[store.activeTool];
         t?.onKeyDown(e);
+        return;
+      }
+
+      // Enter — edit selected dimension
+      if (e.key === 'Enter' && store.selectedConstraintId) {
+        const c = store.constraints[store.selectedConstraintId];
+        if (c?.value !== undefined) store.openDimensionDialog(store.selectedConstraintId, c.value);
         return;
       }
 
@@ -336,6 +375,7 @@ export function SketchCanvas() {
         onMouseMove={onMouseMove}
         onMouseDown={onMouseDown}
         onMouseUp={onMouseUp}
+        onDoubleClick={onDoubleClick}
         onWheel={onWheel}
         onContextMenu={onContextMenu}
       />

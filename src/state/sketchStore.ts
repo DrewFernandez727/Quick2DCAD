@@ -31,6 +31,7 @@ export interface SketchStore {
 
   // Selection
   selectedIds: Set<EntityId>;
+  selectedConstraintId: ConstraintId | null;
 
   // Snap
   snapOptions: SnapOptions;
@@ -83,6 +84,7 @@ export interface SketchStore {
   selectIds(ids: EntityId[]): void;
   toggleSelect(id: EntityId): void;
   clearSelection(): void;
+  selectConstraint(id: ConstraintId | null): void;
 
   // Snap
   setSnapResult(r: SnapResult | null): void;
@@ -193,6 +195,7 @@ export const useSketchStore = create<SketchStore>()(
     arcMode: 0,
     dimMode: 'smart',
     selectedIds: new Set<EntityId>(),
+    selectedConstraintId: null,
     snapOptions: { ...DEFAULT_SNAP_OPTIONS },
     snapResult: null,
     gridSize: 10, // 10mm grid
@@ -232,6 +235,7 @@ export const useSketchStore = create<SketchStore>()(
     setActiveTool: (tool) => set(s => {
       s.activeTool = tool;
       s.selectedIds = new Set();
+      s.selectedConstraintId = null;
     }),
     setArcMode: (m) => set(s => { s.arcMode = m; }),
     setDimMode: (m) => set(s => { s.dimMode = m; }),
@@ -245,7 +249,8 @@ export const useSketchStore = create<SketchStore>()(
       if (s.selectedIds.has(id)) s.selectedIds.delete(id);
       else s.selectedIds.add(id);
     }),
-    clearSelection: () => set(s => { s.selectedIds = new Set(); }),
+    clearSelection: () => set(s => { s.selectedIds = new Set(); s.selectedConstraintId = null; }),
+    selectConstraint: (id) => set(s => { s.selectedConstraintId = id; s.selectedIds = new Set(); }),
 
     // ── Snap ──────────────────────────────────────────────────────────────────
     setSnapResult: (r) => set(s => { s.snapResult = r; }),
