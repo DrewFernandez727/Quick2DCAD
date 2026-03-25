@@ -2,6 +2,17 @@ import { useSketchStore } from '../state/sketchStore';
 import type { ConstraintType } from '../geometry/types';
 import { solve, solveSimple } from '../solver/ConstraintSolver';
 import { formatLength, formatAngle } from '../geometry/units';
+import type { DimMode } from '../tools/DimensionTool';
+
+const DIM_MODES: { mode: DimMode; label: string; icon: string; title: string }[] = [
+  { mode: 'smart',      label: 'Smart',   icon: '★', title: 'Smart Dimension — auto-detects type' },
+  { mode: 'linear',     label: 'Linear',  icon: '↔', title: 'Aligned linear distance' },
+  { mode: 'horizontal', label: 'Horiz',   icon: '⇔', title: 'Horizontal distance' },
+  { mode: 'vertical',   label: 'Vert',    icon: '⇕', title: 'Vertical distance' },
+  { mode: 'angle',      label: 'Angle',   icon: '∠', title: 'Angle between two lines' },
+  { mode: 'radius',     label: 'Radius',  icon: 'R',  title: 'Radius of arc or circle' },
+  { mode: 'diameter',   label: 'Diam',    icon: '⌀', title: 'Diameter of circle' },
+];
 
 interface ConstraintDef {
   type: ConstraintType;
@@ -67,6 +78,12 @@ function applyConstraint(type: ConstraintType, minEntities: number) {
 export function ConstraintBar() {
   const solveStatus = useSketchStore(s => s.solveStatus);
   const pendingConstraint = useSketchStore(s => s.pendingConstraint);
+  const activeTool = useSketchStore(s => s.activeTool);
+  const setActiveTool = useSketchStore(s => s.setActiveTool);
+  const dimMode = useSketchStore(s => s.dimMode);
+  const setDimMode = useSketchStore(s => s.setDimMode);
+
+  const isDimActive = activeTool === 'dim';
 
   const statusColor = solveStatus === 'ok' ? '#4ec94e' : solveStatus === 'redundant' ? '#f5c842' : '#ff4444';
   const statusLabel = solveStatus === 'ok' ? 'Solved' : solveStatus === 'redundant' ? 'Redundant' : 'Over-constrained';
@@ -75,6 +92,13 @@ export function ConstraintBar() {
     ...styles.btn,
     ...(pendingConstraint?.type === type ? styles.btnPending : {}),
   });
+
+  const activateDimTool = (mode: DimMode) => {
+    (window as any).__cancelActiveTool?.();
+    useSketchStore.getState().setPendingConstraint(null);
+    setDimMode(mode);
+    setActiveTool('dim');
+  };
 
   return (
     <div style={styles.container}>
@@ -100,6 +124,36 @@ export function ConstraintBar() {
       </div>
 
       <div style={styles.sectionLabel}>Dimensional</div>
+
+      {/* Smart Dimension canvas-picker button */}
+      <div style={styles.dimPickerRow}>
+        <button
+          onClick={() => activateDimTool(isDimActive ? dimMode : 'smart')}
+          style={{ ...styles.smartDimBtn, ...(isDimActive ? styles.smartDimBtnActive : {}) }}
+          title="Smart Dimension — click entities on the canvas to place a dimension"
+        >
+          <span style={{ fontSize: '13px' }}>★</span>
+          <span style={{ fontSize: '10px' }}>{isDimActive ? `${DIM_MODES.find(m => m.mode === dimMode)?.label ?? 'Smart'} Dim (active)` : 'Smart Dim'}</span>
+        </button>
+      </div>
+
+      {/* Dim mode sub-buttons when dim tool is active */}
+      {isDimActive && (
+        <div style={styles.dimModeGrid}>
+          {DIM_MODES.map(m => (
+            <button
+              key={m.mode}
+              onClick={() => activateDimTool(m.mode)}
+              style={{ ...styles.dimModeBtn, ...(dimMode === m.mode ? styles.dimModeBtnActive : {}) }}
+              title={m.title}
+            >
+              <span style={{ fontSize: '11px' }}>{m.icon}</span>
+              <span style={{ fontSize: '7px' }}>{m.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div style={styles.grid}>
         {DIMENSIONAL_CONSTRAINTS.map(c => (
           <button
@@ -222,6 +276,54 @@ const styles: Record<string, React.CSSProperties> = {
     gridTemplateColumns: 'repeat(4, 1fr)',
     gap: '2px',
     padding: '2px 6px',
+  },
+  dimPickerRow: {
+    padding: '2px 6px',
+  },
+  smartDimBtn: {
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: '6px',
+    width: '100%',
+    padding: '5px 8px',
+    borderRadius: '3px',
+    background: '#2d2d2d',
+    border: '1px solid #3a3a3a',
+    color: '#ccc',
+    cursor: 'pointer',
+    fontSize: '10px',
+  },
+  smartDimBtnActive: {
+    background: '#0e639c',
+    border: '1px solid #4a9fcc',
+    color: '#fff',
+  },
+  dimModeGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '2px',
+    padding: '2px 6px 4px',
+    borderLeft: '2px solid #0e639c',
+    marginLeft: '10px',
+    marginRight: '6px',
+  },
+  dimModeBtn: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '4px 2px',
+    borderRadius: '3px',
+    background: '#1e1e1e',
+    border: '1px solid #444',
+    color: '#aaa',
+    cursor: 'pointer',
+    gap: '2px',
+  },
+  dimModeBtnActive: {
+    background: '#0e639c',
+    color: '#fff',
+    borderColor: '#0e639c',
   },
   btn: {
     display: 'flex',

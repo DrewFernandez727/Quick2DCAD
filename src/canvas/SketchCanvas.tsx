@@ -56,6 +56,7 @@ export function SketchCanvas() {
   useEffect(() => {
     (window as any).__triggerSolve = () => {
       try { solve(); } catch { solveSimple(); }
+      useSketchStore.getState().updateReferenceDimensions();
     };
     (window as any).__cancelActiveTool = () => {
       const s = useSketchStore.getState();

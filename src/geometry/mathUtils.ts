@@ -1,4 +1,74 @@
-import { Vec2 } from './types';
+import { Vec2, Entity, EntityId, SketchConstraint, PointEntity, LineEntity, CircleEntity, ArcEntity } from './types';
+
+// ─── Dimension measurement helpers ───────────────────────────────────────────
+
+export function getEntityPoint(e: Entity, entities: Record<EntityId, Entity>): Vec2 | null {
+  if (e.type === 'point') return { x: (e as PointEntity).x, y: (e as PointEntity).y };
+  if (e.type === 'line') {
+    const p1 = entities[(e as LineEntity).p1Id] as PointEntity | undefined;
+    const p2 = entities[(e as LineEntity).p2Id] as PointEntity | undefined;
+    if (p1 && p2) return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+  }
+  if (e.type === 'circle' || e.type === 'arc') {
+    const c = entities[(e as CircleEntity | ArcEntity).centerId] as PointEntity | undefined;
+    if (c) return { x: c.x, y: c.y };
+  }
+  return null;
+}
+
+export function measureConstraintValue(
+  c: Pick<SketchConstraint, 'type' | 'entityIds'>,
+  entities: Record<EntityId, Entity>,
+): number | null {
+  const { type, entityIds } = c;
+  switch (type) {
+    case 'distance': {
+      const p1 = entityIds[0] ? getEntityPoint(entities[entityIds[0]], entities) : null;
+      const p2 = entityIds[1] ? getEntityPoint(entities[entityIds[1]], entities) : null;
+      if (!p1 || !p2) return null;
+      return dist(p1, p2);
+    }
+    case 'horizontalDistance': {
+      const p1 = entityIds[0] ? getEntityPoint(entities[entityIds[0]], entities) : null;
+      const p2 = entityIds[1] ? getEntityPoint(entities[entityIds[1]], entities) : null;
+      if (!p1 || !p2) return null;
+      return Math.abs(p2.x - p1.x);
+    }
+    case 'verticalDistance': {
+      const p1 = entityIds[0] ? getEntityPoint(entities[entityIds[0]], entities) : null;
+      const p2 = entityIds[1] ? getEntityPoint(entities[entityIds[1]], entities) : null;
+      if (!p1 || !p2) return null;
+      return Math.abs(p2.y - p1.y);
+    }
+    case 'radius': {
+      const e = entities[entityIds[0]];
+      if (e?.type === 'circle' || e?.type === 'arc') return (e as CircleEntity | ArcEntity).radius;
+      return null;
+    }
+    case 'diameter': {
+      const e = entities[entityIds[0]];
+      if (e?.type === 'circle') return (e as CircleEntity).radius * 2;
+      return null;
+    }
+    case 'angle': {
+      const l1 = entities[entityIds[0]] as LineEntity | undefined;
+      const l2 = entities[entityIds[1]] as LineEntity | undefined;
+      if (!l1 || l1.type !== 'line' || !l2 || l2.type !== 'line') return null;
+      const a = entities[l1.p1Id] as PointEntity | undefined;
+      const b = entities[l1.p2Id] as PointEntity | undefined;
+      const c = entities[l2.p1Id] as PointEntity | undefined;
+      const d = entities[l2.p2Id] as PointEntity | undefined;
+      if (!a || !b || !c || !d) return null;
+      const ang1 = Math.atan2(b.y - a.y, b.x - a.x);
+      const ang2 = Math.atan2(d.y - c.y, d.x - c.x);
+      let deg = Math.abs(ang1 - ang2) * 180 / Math.PI;
+      if (deg > 180) deg = 360 - deg;
+      return deg;
+    }
+    default:
+      return null;
+  }
+}
 
 export function vec(x: number, y: number): Vec2 { return { x, y }; }
 

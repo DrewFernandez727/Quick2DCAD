@@ -1,12 +1,11 @@
 import { Tool } from './types';
 import {
   Vec2, EntityId, SnapResult, Entity,
-  PointEntity, LineEntity, CircleEntity, ArcEntity,
 } from '../geometry/types';
 import { RenderState } from '../canvas/renderer';
 import { useSketchStore } from '../state/sketchStore';
 import { hitTestAll } from '../canvas/hitTest';
-import { dist } from '../geometry/mathUtils';
+import { measureConstraintValue } from '../geometry/mathUtils';
 import { formatLength, formatAngle } from '../geometry/units';
 
 export type DimMode = 'smart' | 'linear' | 'horizontal' | 'vertical' | 'angle' | 'radius' | 'diameter';
@@ -18,76 +17,6 @@ type ResolvedDimType =
   | 'angle'
   | 'radius'
   | 'diameter';
-
-// ─── Measurement helpers ──────────────────────────────────────────────────────
-
-function getEntityPoint(e: Entity, entities: Record<EntityId, Entity>): Vec2 | null {
-  if (e.type === 'point') return { x: (e as PointEntity).x, y: (e as PointEntity).y };
-  if (e.type === 'line') {
-    const p1 = entities[(e as LineEntity).p1Id] as PointEntity | undefined;
-    const p2 = entities[(e as LineEntity).p2Id] as PointEntity | undefined;
-    if (p1 && p2) return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
-  }
-  if (e.type === 'circle' || e.type === 'arc') {
-    const c = entities[(e as CircleEntity | ArcEntity).centerId] as PointEntity | undefined;
-    if (c) return { x: c.x, y: c.y };
-  }
-  return null;
-}
-
-function measureValue(
-  type: ResolvedDimType,
-  entityIds: EntityId[],
-  entities: Record<EntityId, Entity>,
-): number | null {
-  switch (type) {
-    case 'distance': {
-      const p1 = entityIds[0] ? getEntityPoint(entities[entityIds[0]], entities) : null;
-      const p2 = entityIds[1] ? getEntityPoint(entities[entityIds[1]], entities) : null;
-      if (!p1 || !p2) return null;
-      return dist(p1, p2);
-    }
-    case 'horizontalDistance': {
-      const p1 = entityIds[0] ? getEntityPoint(entities[entityIds[0]], entities) : null;
-      const p2 = entityIds[1] ? getEntityPoint(entities[entityIds[1]], entities) : null;
-      if (!p1 || !p2) return null;
-      return Math.abs(p2.x - p1.x);
-    }
-    case 'verticalDistance': {
-      const p1 = entityIds[0] ? getEntityPoint(entities[entityIds[0]], entities) : null;
-      const p2 = entityIds[1] ? getEntityPoint(entities[entityIds[1]], entities) : null;
-      if (!p1 || !p2) return null;
-      return Math.abs(p2.y - p1.y);
-    }
-    case 'radius': {
-      const e = entities[entityIds[0]];
-      if (e?.type === 'circle' || e?.type === 'arc') return (e as CircleEntity | ArcEntity).radius;
-      return null;
-    }
-    case 'diameter': {
-      const e = entities[entityIds[0]];
-      if (e?.type === 'circle') return (e as CircleEntity).radius * 2;
-      return null;
-    }
-    case 'angle': {
-      const l1 = entities[entityIds[0]] as LineEntity | undefined;
-      const l2 = entities[entityIds[1]] as LineEntity | undefined;
-      if (!l1 || l1.type !== 'line' || !l2 || l2.type !== 'line') return null;
-      const a = entities[l1.p1Id] as PointEntity | undefined;
-      const b = entities[l1.p2Id] as PointEntity | undefined;
-      const c = entities[l2.p1Id] as PointEntity | undefined;
-      const d = entities[l2.p2Id] as PointEntity | undefined;
-      if (!a || !b || !c || !d) return null;
-      const ang1 = Math.atan2(b.y - a.y, b.x - a.x);
-      const ang2 = Math.atan2(d.y - c.y, d.x - c.x);
-      let deg = Math.abs(ang1 - ang2) * 180 / Math.PI;
-      if (deg > 180) deg = 360 - deg;
-      return deg;
-    }
-    default:
-      return null;
-  }
-}
 
 // ─── DimensionTool ────────────────────────────────────────────────────────────
 
@@ -230,7 +159,7 @@ export class DimensionTool implements Tool {
   private place(labelPos: Vec2, store: ReturnType<typeof useSketchStore.getState>) {
     if (!this.resolvedType || !this.resolvedIds.length) return;
 
-    const measured = measureValue(this.resolvedType, this.resolvedIds, store.entities);
+    const measured = measureConstraintValue({ type: this.resolvedType, entityIds: this.resolvedIds }, store.entities);
 
     store.pushHistory();
     const id = store.addConstraint({
@@ -278,7 +207,7 @@ export class DimensionTool implements Tool {
 
     if (this.phase === 'place' && this.resolvedType && this.resolvedIds.length && this.mouse) {
       // Live measured value for the label
-      const val = measureValue(this.resolvedType, this.resolvedIds, store.entities);
+      const val = measureConstraintValue({ type: this.resolvedType, entityIds: this.resolvedIds }, store.entities);
       const units = store.units;
       const labelText = val !== null
         ? (this.resolvedType === 'angle' ? formatAngle(val) : formatLength(val, units))

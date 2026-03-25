@@ -8,8 +8,6 @@ interface ToolDef {
   shortcut: string;
 }
 
-import type { DimMode } from '../tools/DimensionTool';
-
 const TOOLS: ToolDef[] = [
   { name: 'select',  label: 'Select',    icon: '↖', shortcut: 'S' },
   { name: 'line',    label: 'Line',      icon: '╱', shortcut: 'L' },
@@ -19,23 +17,12 @@ const TOOLS: ToolDef[] = [
   { name: 'polygon', label: 'Polygon',   icon: '⬡', shortcut: 'G' },
   { name: 'point',   label: 'Point',     icon: '·', shortcut: 'P' },
   { name: 'trim',    label: 'Trim',      icon: '✂', shortcut: 'T' },
-  { name: 'dim',     label: 'Dimension', icon: '↔', shortcut: 'D' },
 ];
 
 const ARC_MODES: { label: string; title: string }[] = [
   { label: 'C-R-E', title: 'Center → Radius → End angle' },
   { label: '3-Pt',  title: 'Start → Midpoint on arc → End (Tab)' },
   { label: 'S-C-E', title: 'Start → Center → End (Tab)' },
-];
-
-const DIM_MODES: { mode: DimMode; label: string; icon: string; title: string }[] = [
-  { mode: 'smart',      label: 'Smart',   icon: '★', title: 'Smart Dimension — auto-detects type' },
-  { mode: 'linear',     label: 'Linear',  icon: '↔', title: 'Aligned linear distance' },
-  { mode: 'horizontal', label: 'Horiz',   icon: '⇔', title: 'Horizontal distance' },
-  { mode: 'vertical',   label: 'Vert',    icon: '⇕', title: 'Vertical distance' },
-  { mode: 'angle',      label: 'Angle',   icon: '∠', title: 'Angle between two lines' },
-  { mode: 'radius',     label: 'Radius',  icon: 'R',  title: 'Radius of arc or circle' },
-  { mode: 'diameter',   label: 'Diam',    icon: '⌀', title: 'Diameter of circle' },
 ];
 
 export function Toolbar() {
@@ -46,8 +33,6 @@ export function Toolbar() {
   const showGrid = useSketchStore(s => s.showGrid);
   const arcMode = useSketchStore(s => s.arcMode);
   const setArcMode = useSketchStore(s => s.setArcMode);
-  const dimMode = useSketchStore(s => s.dimMode);
-  const setDimMode = useSketchStore(s => s.setDimMode);
   const exportSketch = useSketchStore(s => s.exportSketch);
   const importSketch = useSketchStore(s => s.importSketch);
   const clearSketch = useSketchStore(s => s.clearSketch);
@@ -111,21 +96,6 @@ export function Toolbar() {
                     style={{ ...styles.subBtn, ...(arcMode === i ? styles.subBtnActive : {}) }}
                     title={m.title}
                   >{m.label}</button>
-                ))}
-              </div>
-            )}
-            {t.name === 'dim' && activeTool === 'dim' && (
-              <div style={styles.subBtns}>
-                {DIM_MODES.map(m => (
-                  <button
-                    key={m.mode}
-                    onClick={() => setDimMode(m.mode)}
-                    style={{ ...styles.subBtn, ...(dimMode === m.mode ? styles.subBtnActive : {}) }}
-                    title={m.title}
-                  >
-                    <span style={{ fontSize: '11px' }}>{m.icon}</span>
-                    {' '}{m.label}
-                  </button>
                 ))}
               </div>
             )}

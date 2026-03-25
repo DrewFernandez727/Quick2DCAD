@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSketchStore } from '../state/sketchStore';
 import { solve, solveSimple } from '../solver/ConstraintSolver';
 import { toDisplay, fromDisplay, UNIT_LABELS } from '../geometry/units';
+import { measureConstraintValue } from '../geometry/mathUtils';
 
 export function DimensionDialog() {
   const dialog = useSketchStore(s => s.dimensionDialog);
@@ -39,18 +40,25 @@ export function DimensionDialog() {
   const displayUnits = isAngle ? '°' : UNIT_LABELS[units];
 
   const handleConfirm = () => {
-    const num = parseFloat(localValue);
-    if (isNaN(num) || num <= 0) {
-      alert('Enter a valid positive number.');
-      return;
-    }
-    // Convert from display units back to mm (angles stay as degrees)
-    const storedValue = isAngle ? num : fromDisplay(num, units);
     pushHistory();
-    updateDimensionConstraintValue(dialog.constraintId!, storedValue);
-    // Set driving state if changed
-    if (isReference === constraint.driving) {
-      toggleConstraintDriving(dialog.constraintId!);
+    if (isReference) {
+      // Reference dimension: measure the current live value from the entities
+      const { entities } = useSketchStore.getState();
+      const liveVal = measureConstraintValue(constraint, entities);
+      const storedValue = liveVal !== null ? liveVal : (parseFloat(dialog.value) || 0);
+      updateDimensionConstraintValue(dialog.constraintId!, storedValue);
+      if (constraint.driving) toggleConstraintDriving(dialog.constraintId!);
+    } else {
+      const num = parseFloat(localValue);
+      if (isNaN(num) || num <= 0) {
+        alert('Enter a valid positive number.');
+        return;
+      }
+      // Convert from display units back to mm (angles stay as degrees)
+      const storedValue = isAngle ? num : fromDisplay(num, units);
+      updateDimensionConstraintValue(dialog.constraintId!, storedValue);
+      // Set driving state if changed
+      if (!constraint.driving) toggleConstraintDriving(dialog.constraintId!);
     }
     closeDimensionDialog();
     try { solve(); } catch { solveSimple(); }
@@ -81,20 +89,22 @@ export function DimensionDialog() {
     <div style={styles.overlay}>
       <div style={styles.dialog}>
         <div style={styles.title}>{label}</div>
-        <div style={styles.row}>
-          <input
-            ref={inputRef}
-            type="number"
-            step="0.001"
-            min="0.001"
-            value={localValue}
-            onChange={e => setLocalValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            style={styles.input}
-            placeholder="Enter value"
-          />
-          <span style={styles.units}>{displayUnits}</span>
-        </div>
+        {!isReference && (
+          <div style={styles.row}>
+            <input
+              ref={inputRef}
+              type="number"
+              step="0.001"
+              min="0.001"
+              value={localValue}
+              onChange={e => setLocalValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              style={styles.input}
+              placeholder="Enter value"
+            />
+            <span style={styles.units}>{displayUnits}</span>
+          </div>
+        )}
         <label style={styles.referenceRow}>
           <input
             type="checkbox"

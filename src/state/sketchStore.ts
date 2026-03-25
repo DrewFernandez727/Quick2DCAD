@@ -8,6 +8,7 @@ import {
 import { newId } from '../geometry/idGen';
 import { SnapOptions, DEFAULT_SNAP_OPTIONS } from '../geometry/snap';
 import { UnitSystem } from '../geometry/units';
+import { measureConstraintValue } from '../geometry/mathUtils';
 
 // ─── History ──────────────────────────────────────────────────────────────────
 const MAX_HISTORY = 100;
@@ -120,6 +121,7 @@ export interface SketchStore {
   updateCircleRadiusFromSolver(id: EntityId, radius: number): void;
   updateDimensionConstraintValue(id: ConstraintId, value: number): void;
   toggleConstraintDriving(id: ConstraintId): void;
+  updateReferenceDimensions(): void;
 
   // Dimension dialog
   openDimensionDialog(constraintId: ConstraintId | null, initialValue?: number): void;
@@ -571,6 +573,16 @@ export const useSketchStore = create<SketchStore>()(
     toggleConstraintDriving: (id) => set(s => {
       const c = s.constraints[id];
       if (c) c.driving = !c.driving;
+    }),
+
+    updateReferenceDimensions: () => set(s => {
+      const dimensional = new Set(['distance', 'horizontalDistance', 'verticalDistance', 'angle', 'radius', 'diameter']);
+      for (const c of Object.values(s.constraints)) {
+        if (!c.driving && dimensional.has(c.type)) {
+          const val = measureConstraintValue(c, s.entities as any);
+          if (val !== null) c.value = val;
+        }
+      }
     }),
 
     // ── Dimension dialog ──────────────────────────────────────────────────────

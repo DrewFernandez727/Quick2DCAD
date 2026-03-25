@@ -63,6 +63,7 @@ export class SelectTool implements Tool {
       if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
         const store = useSketchStore.getState();
         store.moveEntities(Array.from(store.selectedIds), dx, dy);
+        store.updateReferenceDimensions();
         this.moveStart = pt;
         this.hasMoved = true;
       }
